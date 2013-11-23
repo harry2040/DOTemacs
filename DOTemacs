@@ -1,0 +1,506 @@
+;; SQL plus prompt should be treated as a prompt.
+(setq comint-use-prompt-regexp t)
+(setq comint-prompt-regexp "^SQL>")
+(setq comint-prompt-read-only t)
+
+;;Custom key bindings
+(global-set-key (kbd "C-c c") 'h-ssh)
+(global-set-key (kbd "C-c r") 'h-send-sql-at-point-to-latest-sql)
+(global-set-key (kbd "C-c t") 'h-visit-term-buffer)
+(global-set-key (kbd "C-c d") 'h-send-db-env)
+(global-set-key (kbd "C-c a") 'h-send-asm-env)
+(global-set-key (kbd "C-c s") 'h-send-sqlplus-env)
+(global-set-key (kbd "C-c e") 'h-send-sql-region)
+(require 'comint)
+
+;;auto complete configuration
+(add-to-list 'load-path "~/.emacs.d/")
+(require 'auto-complete-config)
+(add-to-list 'ac-dictionary-directories "~/.emacs.d/ac-dict")
+(add-to-list 'ac-user-dictionary-files "~/.emacs.d/ac-dict/sqlplus.gvdollar")
+(add-to-list 'ac-user-dictionary-files "~/.emacs.d/ac-dict/sqlplus.vdollar")
+(add-to-list 'ac-user-dictionary-files "~/.emacs.d/ac-dict/sqlplus.utl_packages")
+(add-to-list 'ac-user-dictionary-files "~/.emacs.d/ac-dict/sqlplus.user")
+(add-to-list 'ac-user-dictionary-files "~/.emacs.d/ac-dict/sqlplus.tables")
+(add-to-list 'ac-user-dictionary-files "~/.emacs.d/ac-dict/sqlplus.rman")
+(add-to-list 'ac-user-dictionary-files "~/.emacs.d/ac-dict/sqlplus.packages")
+(add-to-list 'ac-user-dictionary-files "~/.emacs.d/ac-dict/sqlplus.init")
+(add-to-list 'ac-user-dictionary-files "~/.emacs.d/ac-dict/sqlplus.functions")
+(add-to-list 'ac-user-dictionary-files "~/.emacs.d/ac-dict/sqlplus.dbms_packages")
+(add-to-list 'ac-user-dictionary-files "~/.emacs.d/ac-dict/sqlplus.dba")
+(add-to-list 'ac-user-dictionary-files "~/.emacs.d/ac-dict/sqlplus.all")
+(add-to-list 'ac-user-dictionary-files "~/.emacs.d/ac-dict/sqlplus._init")
+(add-to-list 'ac-user-dictionary-files "~/.emacs.d/ac-dict/sqlplus")
+(add-to-list 'ac-user-dictionary-files "~/.emacs.d/ac-dict/rman")
+(add-to-list 'ac-user-dictionary-files "~/.emacs.d/ac-dict/adrci")
+(add-to-list 'ac-user-dictionary-files "~/.emacs.d/ac-dict/asmcmd")
+(ac-config-default)
+(global-auto-complete-mode t)
+
+
+;; Add ac-source-dictionary to ac-sources of all buffer
+(defun ac-common-setup ()
+  (setq ac-sources (append ac-sources '(ac-source-dictionary))))
+
+
+;;function for escape key
+(defun term-send-escape ()
+  "Send ESC in term mode."
+  (interactive)
+  (term-send-raw-string "\e"))
+
+;;Multi-Term key unbinding
+;; use multi-term
+(add-to-list 'load-path "~/.emacs.d/elpa/multi-term-20130108.2305")
+(require 'multi-term)
+(setq multi-term-program "/bin/bash")
+(add-to-list 'term-bind-key-alist '("C-c C-k" . m-toggle-term-mode))
+(add-to-list 'term-bind-key-alist '("C-c C-n" . multi-term-next))
+(add-to-list 'term-bind-key-alist '("C-c C-p" . multi-term-prev))
+(add-to-list 'term-bind-key-alist '("C-c C-t" . multi-term))
+(add-to-list 'term-bind-key-alist '("s-v" . term-paste))
+(add-to-list 'term-bind-key-alist '("C-c C-z" . term-stop-subjob))
+(add-to-list 'term-bind-key-alist '("C-c C-c" . term-interrupt-subjob))
+(add-to-list 'term-bind-key-alist '("C-c C-e" . term-send-escape))
+
+
+
+(defun h-indent-buffer ()
+  "Indents the entire buffer."
+  (interactive)
+  (save-excursion
+    (indent-region (point-min) (point-max))))
+(global-set-key (kbd "C-c C-i") 'h-indent-buffer)
+
+
+(defvar h-dot-profile-commands
+  '("echo EMACs on Term"
+    "/bin/bash"
+    "export TERM=vt100"
+    "export HOST=`uname -n`"
+    "export PS1='[$HOST:$ORACLE_SID $PWD] '"
+    "export NLS_DATE_FORMAT=\"dd/mm/yyyy HH24:MI:SS\""
+    "alias psg=\"ps -ef|grep\""
+    "alias dba=\"sqlplus / as sysdba\""
+    "stty sane"
+    )
+  "This variable contains the list of dot profile commands that should be run after login to a remote system.")
+
+(defvar h-oracledb-environment
+  '("export ORACLE_SID=`ps -ef|grep pmon| grep -v grep| awk '{print $8}'|cut -c10-$NF|grep -v ASM`"
+    "export DB_NAME=`echo $ORACLE_SID| sed 's/11/1/' | sed 's/12/1/'`"
+    "export ORACLE_HOME=`grep -i \"$DB_NAME:\" /etc/oratab | grep -v \"^#\" | grep -v \"^\*\"| grep \":\" | awk -F\":\" '{print $2}'`"
+    "export PATH=$ORACLE_HOME/bin:$PATH"
+    )
+  "This variable contains the list of commands that should be run to set a database environment.")
+
+
+(defvar h-oracleasm-environment
+  '("export ORACLE_SID=`ps -ef|grep pmon| grep -v grep| awk '{print $8}'|cut -c10-$NF|grep ASM`"
+    "export ORACLE_HOME=`grep -i \"$ORACLE_SID:\" /etc/oratab | grep -v \"^#\" | grep -v \"^\*\"| grep \":\" | awk -F\":\" '{print $2}'`"
+    "export PATH=$ORACLE_HOME/bin:$PATH"
+    )
+  "This variable contains the list of commands that should be run to set a database environment.")
+
+
+(defvar h-sqlplus-environment
+  '(                 "$ORACLE_HOME/bin/sqlplus / as sysdba"
+                     "set termout off"
+		     "set head on"
+		     "col name format a50"
+		     "col value format a140"
+		     "set linesize 999"
+		     "set pagesize 5000"
+		     "set long 10000000"
+		     "set longchunksize 10000000"
+		     "set arraysize 500"
+		     "set serveroutput on size unlimited"
+		     "set verify off"
+		     "set trimspool on"
+		     "set tab off"
+		     "set describe depth 1 linenum on indent on"
+		     "def trc=unknown"
+		     "set termout off"
+		     "alter session set nls_date_format = 'DD/MM/YYYY HH24:MI:SS';"
+		     "col first_change# for 99999999999999999"
+		     "col next_change# for 99999999999999999"
+		     "col checkpoint_change# for 99999999999999999"
+		     "col resetlogs_change# for 99999999999999999"
+		     "col plan_plus_exp for a100"
+		     "col value_col_plus_show_param ON HEADING  'VALUE'  FORMAT a100"
+		     "set termout on"
+		     "select value ||'/'||(select instance_name from v\$instance) ||'_ora_'||"
+		     "	       (select spid||case when traceid is not null then '_'||traceid else null end"
+		     "                from v\$process where addr = (select paddr from v\$session"
+		     "	                                         where sid = (select sid from v\$mystat"
+		     "	                                                    where rownum = 1"
+		     "	                                               )"
+		     "	                                    )"
+		     "	       ) || '.trc' tracefile"
+		     "	from v$parameter where name = 'user_dump_dest';"
+		     "def   mysid=\"NA\""
+		     "def _i_spid=\"NA\""
+		     "def _i_cpid=\"NA\""
+		     "def _i_opid=\"NA\""
+		     "def _i_serial=\"NA\""
+		     "def _i_inst=\"NA\""
+		     "def _i_host=\"NA\""
+		     "def _i_user=\"\&_user\""
+		     "def _i_conn=\"\&_connect_identifier\""
+		     "col i_username head USERNAME for a20"
+		     "col i_sid head SID for a5 new_value mysid"
+		     "col i_serial head SERIAL# for a8 new_value _i_serial"
+		     "col i_cpid head CPID for a15 new_value _i_cpid"
+		     "col i_spid head SPID for a15 new_value _i_spid"
+		     "col i_opid head OPID for a5 new_value _i_opid"
+		     "col i_host_name head HOST_NAME for a25 new_value _i_host"
+		     "col i_instance_name head INST_NAME for a12 new_value _i_inst"
+		     "col i_ver head VERSION for a10"
+		     "col i_startup_day head STARTED for a8"
+		     "col _i_user noprint new_value _i_user"
+		     "col _i_conn noprint new_value _i_conn"
+		     "col i_myoraver noprint new_value myoraver"
+		     "select "
+		     "	s.username			i_username, "
+		     "	i.instance_name	i_instance_name, "
+		     "	i.host_name			i_host_name, "
+		     "	to_char(s.sid) 			i_sid, "
+		     "	to_char(s.serial#)		i_serial, "
+		     "	(select substr(banner, instr(banner, 'Release ')+8,10) from v$version where rownum = 1) i_ver,"
+		     "	(select  substr(substr(banner, instr(banner, 'Release ')+8),"
+		     "	 		1,"
+		     "			instr(substr(banner, instr(banner, 'Release ')+8),'.')-1)"
+		     "	 from v\$version "
+		     "	 where rownum = 1) i_myoraver,"
+		     "	to_char(startup_time, 'YYYYMMDD') i_startup_day, "
+		     "	p.spid				i_spid, "
+		     "	trim(to_char(p.pid))		i_opid, "
+		     "	s.process			i_cpid, "
+		     "	s.saddr				saddr, "
+		     "	p.addr				paddr,"
+		     "	lower(s.username) \"_i_user\","
+		     "	upper('&_connect_identifier') \"_i_conn\""
+		     "from "
+		     "	v\$session s, "
+		     "	v\$instance i, "
+		     "	v\$process p"
+		     "where "
+		     "	s.paddr = p.addr"
+		     "and "
+		     "	sid = (select sid from v\$mystat where rownum = 1);"
+		     "def myopid=&_i_opid"
+		     "def myspid=&_i_spid"
+		     "def mycpid=&_i_cpid"
+		     "select host_name from GV\$instance;"
+		     "select 'Archive log sequences' from dual;"
+		     "select max(sequence#), thread# from GV\$archived_log group by thread#;"
+		     )    "This variable is for login.sql like processing of default parameters to open sqlplus with.")
+
+
+;; This function is googling from emacs
+(defun google ()
+  "Googles a query or region if any."
+  (interactive)
+  (browse-url
+   (concat
+    "http://www.google.com/search?ie=utf-8&oe=utf-8&q="
+    (if mark-active
+        (buffer-substring (region-beginning) (region-end))
+      (read-string "Query: "))))) 
+
+;; Load the server-password combination file
+(setq h-servers-and-passwords-alist-file "~/org/servers.el")
+
+(defun h-load-servers-and-passwords ()
+  (interactive)
+  (load-file h-servers-and-passwords-alist-file))
+
+(defun h-add-to-servers-and-passwords (server password)
+  (setq h-servers-and-passwords (cons (cons server password) h-servers-and-passwords)))
+
+(defun h-update-servers-and-passwords ()
+  (with-temp-buffer
+    (insert-string ";; Please don't modify the contents of this buffer.\n")
+    (insert-string (format ";; The contents were automatically generated at %s.\n" (current-time-string)))
+    (insert-string "(setq h-servers-and-passwords '")
+    (prin1 h-servers-and-passwords (current-buffer))
+    (insert-string ")")
+    (indent-region (point-min) (point-max))
+    (write-file h-servers-and-passwords-alist-file)))
+
+(defun h-get-server-password (server)
+  "Returns the server password from h-servers-and-passwords alist."
+  (interactive)
+  (cdr (assoc server h-servers-and-passwords)))
+
+(defun h-get-servers-autocompletion-list ()
+  "Returns the names of all known servers that can be used for auto completion."
+  (interactive)
+  (let (servers-list '())
+    (dolist (server-and-password h-servers-and-passwords)
+      (setq servers-list (cons (car server-and-password) servers-list)))
+    servers-list))
+
+
+(defun h-visit-term-buffer ()
+  "Create or visit a terminal buffer."
+  (interactive)
+  (h-load-servers-and-passwords)
+  (let* ((server-str (completing-read "Enter server name: " (h-get-servers-autocompletion-list)))
+	 (password (h-get-server-password server-str)))
+    (when (null password)
+      (setq password (read-string (format "Enter password for server %s: " server-str)))
+      (h-add-to-servers-and-passwords server-str password)
+      (h-update-servers-and-passwords))
+    (setq term-buffer (format "*term%s" server-str))
+    (message "term buffer is %s" term-buffer)    
+    (setq multi-term-buffer-name term-buffer)
+    (multi-term)   
+    (comint-send-string (h-get-first-sql-buffer) (format "ssh -q %s -l oracle -o StrictHostKeyChecking=no\n" server-str))
+    (message "Process: %s" (get-buffer-process (h-get-first-sql-buffer)))
+    (message "Read from process [%s]" (accept-process-output (get-buffer-process (h-get-first-sql-buffer)) nil nil t))
+    (message "Read from process [%s]" (accept-process-output (get-buffer-process (h-get-first-sql-buffer)) nil nil t))
+    ;; (message "Sending the password to the process ...\n")
+    (comint-send-string (h-get-first-sql-buffer) (message "%s\n" password)) 
+    (dolist (command h-dot-profile-commands)
+      (comint-send-string (h-get-first-sql-buffer)(format "%s\n" command))
+      )   
+    ))
+
+(defun h-send-db-env ()
+  "Send the parameters to set DB environment variables"
+  (interactive)
+  (dolist (command h-oracledb-environment)
+    (comint-send-string (h-get-first-sql-buffer)(format "%s\n" command))))
+
+(defun h-send-asm-env ()
+  "Send the parameters to set ASM environment variables"
+  (interactive)
+  (dolist (command h-oracleasm-environment)
+    (comint-send-string (h-get-first-sql-buffer)(format "%s\n" command))))
+
+(defun h-send-sqlplus-env ()
+  "Send the parameters to set ASM environment variables"
+  (interactive)
+  (dolist (command h-sqlplus-environment)
+    (comint-send-string (h-get-first-sql-buffer)(format "%s\n" command))))
+
+(defun h-send-sql-region ()t
+  "This function extracts the selected region and sends it to buffer."
+  (interactive)
+  (setq selection (buffer-substring-no-properties (region-beginning) (region-end)))
+  (comint-send-string (h-get-first-sql-buffer) (format "%s\n" (h-flatten-line selection))))
+
+
+(defun h-send-string-toSQL (input-string)
+  "This function returns the last used plink shell"
+  (interactive "sEnter string to be sent: ")
+  (comint-send-string (h-get-first-sql-buffer) (format "%s\n" input-string)))
+
+(defun h-send-sql-at-point-to-latest-sql ()
+  "This function extracts the SQL statement (until the first semicolon) and sends it to the first SQL session for execution."
+  (interactive)
+  (let (sql-string)
+    (narrow-to-region (point) (h-find-sql-stmt-end))
+    (setq sql-string (buffer-string))
+    (widen)
+    (comint-send-string (h-get-first-sql-buffer) (format "%s;\n" (h-flatten-line sql-string)))))
+
+(defun h-flatten-line (input-str)
+  "Replaces all the CRLF characters in the input-str."
+  (interactive)
+  (replace-regexp-in-string "[\n\r]+" " " input-str))
+
+(defun h-get-first-sql-buffer ()
+  (interactive)
+  (let* ((buffers (buffer-list)) (buffer (car buffers)))
+    (while (and buffers (not (string-match "\\*term" (buffer-name buffer))))
+      (setq buffer (car buffers) buffers (cdr buffers)))
+    buffer))
+
+(message "First buffer name: %s" (buffer-name (h-get-first-sql-buffer)))
+
+(defun h-find-sql-stmt-end ()
+  "Finds offset of the first semicolon after the point."
+  (interactive)
+  (let (semicolon-at)
+    (save-excursion
+      (while (not (equal (char-after) ?\;))
+	(forward-char))
+      (setq semicolon-at (point)))
+    semicolon-at))
+
+;; Org mode stuff below
+(require 'org)
+(require 'org-install)
+(add-to-list 'auto-mode-alist '("\\.org$" . org-mode))
+(define-key global-map "\C-cl" 'org-store-link)
+(define-key global-map "\C-cg" 'org-agenda)
+(setq org-log-done t)
+(add-to-list 'org-modules 'org-habit)
+;; Set to the location of your Org files on your local system
+(setq org-directory "~/org")
+
+
+(setq org-todo-keywords
+      (quote ((sequence "TODO(t)" "NEXT(n)" "HOLD(h)" "|" "DONE(d/!)")
+              (sequence "PHONE(p)" "MEETING(m)" "|" "DONE(d/!)")
+	      (sequence "LISTENED(l)" "DOWNLOADED(i)"))))
+
+(setq org-todo-keyword-faces
+      (quote (("TODO" :foreground "red" :weight bold)
+              ("NEXT" :foreground "blue" :weight bold)
+              ("DONE" :foreground "forest green" :weight bold)
+              ("HOLD" :foreground "magenta" :weight bold)
+              ("MEETING" :foreground "forest green" :weight bold)
+              ("PHONE" :foreground "forest green" :weight bold))))
+
+(setq org-default-notes-file "~/Projects/Environment/myToDo.org")
+
+;; I use C-c c to start capture mode
+(global-set-key (kbd "C-c c") 'org-capture)
+
+;; Capture templates for: TODO tasks, Notes, appointments, phone calls, meetings, and org-protocol
+(setq org-capture-templates
+      (quote (("t" "todo" entry (file+headline "~/org/myToDo.org" "Work related tasks")
+               "* TODO %?\n%U\n%a\n")
+              ("l" "LISTENED" entry (file+headline "~/org/myToDo.org" "Music listened to")
+               "* LISTENED %?\n%U\n%a\n")
+              ("n" "note" entry (file "~/org/myToDo.org")
+               "* %? * \n%U\n%a\n")
+              ("p" "Phone call" entry (file "~/org/myToDo.org")
+               "* PHONE %? :PHONE:\n%U" :clock-in t :clock-resume t)
+              ("h" "Habit" entry (file "~/org/lifestyle.org")
+               "* TODO %?\n%U\n%a\nSCHEDULED: %(format-time-string \"<%Y-%m-%d %a .+1d>\")\n:PROPERTIES:\n:STYLE: habit\n:REPEAT_TO_STATE: DONE\n:END:\n"))))
+
+;;GNUS Windows configuration
+
+(defun h-gnus ()
+  (interactive)
+  (let ((bufname (buffer-name)))
+    (if (or
+         (string-equal "*Group*" bufname)
+         (string-equal "*BBDB*" bufname)
+         (string-match "\*Summary" bufname)
+         (string-match "\*Article" bufname))
+        (progn
+          (h-bury-gnus))
+					;unbury
+      (if (get-buffer "*Group*")
+          (h-unbury-gnus)
+        (gnus-unplugged)))))
+
+(defun h-unbury-gnus ()
+  (interactive)
+  (when (and (boundp 'gnus-bury-window-configuration) gnus-bury-window-configuration)
+    (set-window-configuration gnus-bury-window-configuration)))
+
+(defun h-bury-gnus ()
+  (interactive)
+  (setq gnus-bury-window-configuration nil)
+  (let ((buf nil)
+        (bufname nil))
+    (dolist (buf (buffer-list))
+      (setq bufname (buffer-name buf))
+      (when (or
+             (string-equal "*Group*" bufname)
+             (string-equal "*BBDB*" bufname)
+             (string-match "\*Summary" bufname)
+             (string-match "\*Article" bufname))
+        (unless gnus-bury-window-configuration
+          (setq gnus-bury-window-configuration (current-window-configuration)))
+        (delete-other-windows)
+        (if (eq (current-buffer) buf)
+            (bury-buffer)
+          (bury-buffer buf))))))
+
+(global-set-key [(meta f1)] 'h-gnus)
+
+
+
+
+;; Attach to the different repositories
+(setq package-archives '(("gnu" . "http://elpa.gnu.org/packages/")
+                         ("marmalade" . "http://marmalade-repo.org/packages/")
+                         ("melpa" . "http://melpa.milkbox.net/packages/")))
+
+;;enable copy paste from system to outside
+(setq x-select-enable-clipboard t)
+
+;; I-Switch buffer mode
+(iswitchb-mode 1)
+
+
+
+
+;;Registers
+(set-register ?e '(file . "~/.emacs"))
+(set-register ?i '(file . "~/org/ideas.org"))
+(set-register ?s '(file . "~/org/servers.el"))
+(set-register ?t '(file . "~/org/myToDo.org"))
+;;Apprpros Oracle
+
+;;Trying to read Oracle docs - Not complete/functional
+(setq apropos-url-alist
+      '(("^od?:? +\\(.*\\)" . ;; Oracle docs
+         "http://www.oracle.com/pls/db112/search?remark=quick_search&word=\\1")
+	))
+
+(custom-set-variables
+ ;; custom-set-variables was added by Custom.
+ ;; If you edit it by hand, you could mess it up, so be careful.
+ ;; Your init file should contain only one such instance.
+ ;; If there is more than one, they won't work right.
+ '(ansi-color-names-vector ["#212526" "#ff4b4b" "#b4fa70" "#fce94f" "#729fcf" "#ad7fa8" "#8cc4ff" "#eeeeec"])
+ '(comint-prompt-read-only t)
+ '(comint-use-prompt-regexp t)
+ '(custom-enabled-themes (quote (tsdh-light)))
+ '(desktop-enable t nil (desktop))
+ '(desktop-save-mode t nil (desktop))
+ '(save-place t nil (saveplace))
+ '(send-mail-function (quote smtpmail-send-it))
+ '(smtpmail-smtp-server "mailout.data.ie.intuit.net")
+ '(smtpmail-smtp-service 25))
+(custom-set-faces
+ ;; custom-set-faces was added by Custom.
+ ;; If you edit it by hand, you could mess it up, so be careful.
+ ;; Your init file should contain only one such instance.
+ ;; If there is more than one, they won't work right.
+ )
+
+;;Start revive at the beginning
+(add-to-list 'load-path "~/.emacs.d/elpa/revive-20121022.1311")
+;;(message load-path)
+(require 'revive)
+(resume)
+;;Mac Copy-Paste Fix
+
+(defun mac-copy ()
+  (shell-command-to-string "pbpaste"))
+
+(defun mac-paste (text &optional push)
+  (let ((process-connection-type nil)) 
+    (let ((proc (start-process "pbcopy" "*Messages*" "pbcopy")))
+      (process-send-string proc text)
+      (process-send-eof proc))))
+
+(setq interprogram-cut-function 'mac-paste)
+(setq interprogram-paste-function 'mac-copy)
+
+
+;; disable bell function
+(setq ring-bell-function 'ignore)
+
+
+;; An equivalent of vi's Esc-f functionality.- Roy's function
+(defun jump-to-char(repeat-count ch)
+  (interactive "p\nc")
+
+  (message "jump-to-char called with [%s]" (string ch))
+  (dotimes (counter repeat-count)
+    (forward-char)
+
+    (search-forward (string ch))
+    (backward-char)))
+
+(global-set-key (kbd "M-z") 'jump-to-char)

@@ -1,0 +1,20 @@
+My DOT emacs file has the following capabilities
+1. "C-c t" to give a new server name and it will prompt for password only for the first time. Stores the password in a new file and it will automatically connect next time
+2. When in a text mode/scratch mode, autocomplete of text including SQLs
+3. "C-c e" sends escape to terminal
+4. Auto sends custom DOT profile to every server you login.
+5. Key combinations to automatically switch between Oracle Database("C-c d") and Oracle ASM ("C-c a")environment
+6. Key combinations("C-c s") to automatically start sqlplus session on server with custom glogin.sql file
+7. Key combination to send selected SQL("C-c r") to emacs term session which is running a sqlplus session.
+8. Google Search a term from emacs ("M-x google")
+9. Org mode setup with a ToDo list, Ideas list, Scripts file
+10. GNUs setup for reading frequently visited blogs and other subscriptions
+11. Registers to jump to files that I edit frequently.
+12. Revive package to start Emacs with the same window configuration everytime 
+13. Enable copy paste functionality in Mac.
+14. Roy's function for jumping to a character.
+
+Files added to GitHub.
+a) DOTemacs (to be named to .emacs - Duh!)
+b) Dictionary files for auto completion (dictionary folder)
+c) myscripts.org ( Collection of all my frequently used SQLs in Orgmode!)
