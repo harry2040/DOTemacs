@@ -1,0 +1,2730 @@
+
+* My scripts
+
+** Backup and Recovery
+*** RMAN catalog check
+    select          db_name,
+                to_char(bjd.start_time, 'yyyy-mm-dd hh24:mi:ss'),
+                to_char(bjd.end_time, 'yyyy-mm-dd hh24:mi:ss'),
+                status,
+                input_type,
+                elapsed_seconds,
+                output_bytes_display,
+                output_device_type              
+        from rc_rman_backup_job_details bjd
+        where end_time > sysdate - 48
+        and db_name='POBNKII'
+        order by  db_name, start_time
+*** Flashback database to point in time
+ ORACLE_SID=sobnkiid ; export ORACLE_SID
+ORACLE_HOME=/apps/oracle/product/10.2.0.4_cpuoct08 ;export ORACLE_HOME
+PATH=$PATH:$ORACLE_HOME/bin ; export PATH
+LD_LIBRARY_PATH=$ORACLE_HOME/lib ; export LD_LIBRARY_PATH
+NLS_DATE_FORMAT='dd/mm/yyyy hh24:mi:ss' ; export NLS_DATE_FORMAT
+DATE=`date '+%d%m%y-%H%M%S'` ; export DATE
+
+$ORACLE_HOME/bin/rman log=/apps/oracle/home/kam/sobnkiid_flashback_$DATE.log <<eor
+connect catalog rcat/skylark4@prcat;
+connect target / ;
+shutdown immediate;
+startup mount;
+run
+{
+allocate channel t1 type 'sbt_tape' parms 'ENV=(TDPO_OPTFILE=/opt/tivoli/tsm/client/oracle/bin64/tdpo.opt,DSMI_LOG=/apps/oracle/dba/local/log)';
+allocate channel t2 type 'sbt_tape' parms 'ENV=(TDPO_OPTFILE=/opt/tivoli/tsm/client/oracle/bin64/tdpo.opt,DSMI_LOG=/apps/oracle/dba/local/log)';
+sql 'alter database backup controlfile to trace';
+flashback database to time "to_date('11/05/2010 06:00:00','dd/mm/yyyy hh24:mi:ss')";
+release channel t1;
+release channel t2;
+}
+eor
+
+*** Clone Script
+    #!/bin/ksh
+export NLS_DATE_FORMAT='Mon DD YYYY HH24:MI:SS'
+ORATAB=/var/opt/oracle/oratab
+export ORACLE_SID=dobnkiib
+export ORACLE_HOME=`grep -i "$ORACLE_SID:" $ORATAB | grep -v "^#" | grep -v "^\*"| grep ":" | awk -F":" '{print $2}'`
+export PATH=$ORACLE_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$ORACLE_HOME/ctx/lib:$ORACLE_HOME/lib:$LD_LIBRARY_PATH
+which rman
+env | grep -i ora
+#
+rman<<!
+connect CATALOG rcat/skylark4@prcat
+connect TARGET sys/knotjul746@sobnkiib
+connect auxiliary /
+run {
+allocate auxiliary channel t1 type 'sbt_tape' parms 'ENV=(TDPO_OPTFILE=/opt/tivoli/tsm/client/oracle/bin64/tdpo.opt.ppts,DSMI_LOG=/apps/oracle/dba/local/log)';
+allocate auxiliary channel t2 type 'sbt_tape' parms 'ENV=(TDPO_OPTFILE=/opt/tivoli/tsm/client/oracle/bin64/tdpo.opt.ppts,DSMI_LOG=/apps/oracle/dba/local/log)';
+duplicate target database to dobnkiib until sequence 1988 thread 1;
+}
+!
+
+*** Archivelog backup job
+#!/bin/ksh
+set -x
+export DB=$1
+export ORACLE_SID=$2
+export ORACLE_HOME=/u01/app/rtvdev03/oracle/product/11.1.0.7/db
+export PATH=$ORACLE_HOME/bin:$PATH
+export BACK_LOC=/rman/production/${DB}
+export NLS_DATE_FORMAT='DD-MON-YYYY HH24:MI:SS'
+export DATE=`date +%d%b%y`
+export LOG_DIR=/rman/rman_logs
+export SNAP_LOC=/u02/oradata/rtvdev03
+NOTIFY_EMAIL="easmdataoracle@xxxxx.net"
+export LOG_FILE=${LOG_DIR}/rman_arc_${DATE}_$DB.log
+$ORACLE_HOME/bin/rman target / log $LOG_FILE  << !
+run{
+DELETE NOPROMPT EXPIRED ARCHIVELOG ALL;
+BACKUP ARCHIVELOG ALL format '$BACK_LOC/%d_%T_%U_archive.arc' DELETE ALL INPUT;
+}
+!
+
+*** Recover data after corruption
+Note:33405.1   Extracting Data from a Corrupt Table using SKIP_CORRUPT_BLOCKS or Event 10231
+Note:34371.1   Extracting Data from a Corrupt Table using ROWID or Index Scans in Oracle7
+Note:61685.1   Extracting Data from a Corrupt Table using ROWID Range Scans in Oracle8/8i 
+Note:1029883.6 Extracting Data from a Corrupt Table using SALVAGE Scripts / Programs 
+Note:97357.1   SALVAGE.PC  - Oracle8i Pro*C Code to Extract Data from a Corrupt Table
+Note:2077307.6 SALVAGE.PC  - Oracle7 Pro*C Code to Extract Data from a Corrupt Table
+Note:2064553.4 SALVAGE.SQL - PL/SQL Code to Extract Data from a Corrupt Table
+
+*** Flashback database script
+
+ORACLE_SID=sobnkiid ; export ORACLE_SID
+ORACLE_HOME=/apps/oracle/product/10.2.0.4_cpuoct08 ;export ORACLE_HOME
+PATH=$PATH:$ORACLE_HOME/bin ; export PATH
+LD_LIBRARY_PATH=$ORACLE_HOME/lib ; export LD_LIBRARY_PATH
+NLS_DATE_FORMAT='dd/mm/yyyy hh24:mi:ss' ; export NLS_DATE_FORMAT
+DATE=`date '+%d%m%y-%H%M%S'` ; export DATE
+
+$ORACLE_HOME/bin/rman log=/apps/oracle/home/kam/sobnkiid_flashback_$DATE.log <<eor
+connect catalog rcat/really@prcat;
+connect target / ;
+shutdown immediate;
+startup mount;
+run
+{
+allocate channel t1 type 'sbt_tape' parms 'ENV=(TDPO_OPTFILE=/opt/tivoli/tsm/client/oracle/bin64/tdpo.opt,DSMI_LOG=/apps/oracle/dba/local/log)';
+allocate channel t2 type 'sbt_tape' parms 'ENV=(TDPO_OPTFILE=/opt/tivoli/tsm/client/oracle/bin64/tdpo.opt,DSMI_LOG=/apps/oracle/dba/local/log)';
+sql 'alter database backup controlfile to trace';
+flashback database to time "to_date('11/05/2010 06:00:00','dd/mm/yyyy hh24:mi:ss')";
+release channel t1;
+release channel t2;
+}
+eor
+
+*** Level 0 Backup
+
+run {
+execute script sobnkiid_inc_0;
+}
+
+printing stored script: sobnkiid_inc_0
+{
+HOST '/usr/bin/date';
+allocate channel t1 type 'sbt_tape' parms
+'ENV=(TDPO_OPTFILE=/opt/tivoli/tsm/client/oracle/bin64/tdpo.opt,DSMI_LOG=/apps/oracle/dba/local/log)';
+allocate channel t2 type 'sbt_tape' parms
+'ENV=(TDPO_OPTFILE=/opt/tivoli/tsm/client/oracle/bin64/tdpo.opt,DSMI_LOG=/apps/oracle/dba/local/log)';
+RESYNC CATALOG;
+SQL 'alter database backup controlfile to trace';
+BACKUP INCREMENTAL LEVEL = 0 FILESPERSET 64 DATABASE;
+BACKUP ARCHIVELOG ALL DELETE ALL INPUT;
+CROSSCHECK ARCHIVELOG ALL;
+REPORT UNRECOVERABLE;
+REPORT NEED BACKUP;
+HOST '/usr/bin/date';
+}
+
+*** OneOff Archivelog to clear space
+run {
+      backup tag "OneoffArchBackup" archivelog all skip inaccessible not backed up format '/rman/production/otcdevp1/%d_%T_%U_incr.arc' delete all input;
+    }
+*** Archivelog backup job
+printing stored script: dcap_arc_all
+ {
+HOST '/usr/bin/date';
+allocate channel t1 type 'sbt_tape' parms
+'ENV=(TDPO_OPTFILE=/opt/tivoli/tsm/client/oracle/bin64/tdpo.opt,DSMI_LOG=/apps/oracle/dba/local/log)';
+allocate channel t2 type 'sbt_tape' parms
+'ENV=(TDPO_OPTFILE=/opt/tivoli/tsm/client/oracle/bin64/tdpo.opt,DSMI_LOG=/apps/oracle/dba/local/log)';
+CROSSCHECK ARCHIVELOG ALL;
+DELETE NOPROMPT EXPIRED ARCHIVELOG ALL;
+BACKUP ARCHIVELOG ALL DELETE ALL INPUT;
+CROSSCHECK ARCHIVELOG ALL;
+HOST '/usr/bin/date';
+}
+
+*** Retrive archive logs from tape
+*offline that particular tablespace..
+
+*Do recovery of that particular datafile
+
+*apply the required archive files
+
+set dbid = 2013952227;
+connect catalog rman/die@rmap; ---> if catalog
+connect target /;
+run {
+allocate channel tape1 type 'SBT_TAPE';
+allocate channel tape2 type 'SBT_TAPE';
+set archivelog destination to "/app/oracle/home/";
+restore archivelog sequence     159177;
+release channel tape1;
+release channel tape2;
+}
+
+*** Point in time recovery
+
+run 
+{
+allocate channel t1 type 'sbt_tape' parms 'ENV=(TDPO_OPTFILE=/opt/tivoli/tsm/client/oracle/bin64/tdpo.opt,DSMI_LOG=/apps/oracle/dba/local/log)';
+allocate channel t2 type 'sbt_tape' parms 'ENV=(TDPO_OPTFILE=/opt/tivoli/tsm/client/oracle/bin64/tdpo.opt,DSMI_LOG=/apps/oracle/dba/local/log)';
+set until time "to_date('Jan 31 2011 14:00:00','Mon DD YYYY HH24:mi:ss')";
+restore database;
+recover database;
+release channel t1;
+release channel t2;
+}
+
+*** RMAN Script netmands
+list script names;
+
+print script scriptname;
+
+execute script scriptname;
+
+list backup summary;
+
+report need backup;
+
+*** Obsolete backups
+
+report obsolete;
+
+delete noprompt obsolete;
+
+*** Backup data transfer rate
+
+select * from v$BACKUP_SYNC_IO;
+
+select * from v$BACKUP_ASYNC_IO;
+
+select device_type, type, filename, to_char(open_time, 'mm/dd/yyyy hh24:mi:ss') open,
+to_char(close_time, 'mm/dd/yyyy hh24:mi:ss') close, elapsed_time ET, effective_bytes_per_second EPS
+from v$backup_async_io
+where close_time >sysdate -1
+order by close_time desc
+
+*** Access old backups
+LIST incarnations
+
+RESET DATABASE TO INCARNATION 2;
+
+RESTORE DATABASE UNTIL SCN 154876;
+
+*** RMAN Slowness
+SQL> exec dbms_stats.gather_fixed_objects_stats
+
+*** DISK Backup
+RUN
+{
+  ALLOCATE CHANNEL disk1 DEVICE TYPE DISK FORMAT '/apps/oracle/backup/pocdb1n/%U'; 
+  ALLOCATE CHANNEL disk2 DEVICE TYPE DISK FORMAT '/apps/oracle/backup/pocdb1n/%U'; 
+  BACKUP DATABASE PLUS ARCHIVELOG;
+} 
+
+
+** Oracle Scheduler
+*** Create Scheduler
+    begin
+  dbms_scheduler.create_job(
+      job_name => 'MU_SCHEDULER'
+     ,job_type => 'STORED_PROCEDURE'
+     ,job_action => 'MU_NETMON.Run_Scheduler'
+     ,start_date => SYSTIMESTAMP
+     ,repeat_interval => 'FREQ=Minutely; INTERVAL=30'
+     ,enabled => TRUE
+     );
+end;
+/
+*** Drop Scheduled Job
+
+    dbms_scheduler.drop_job('MU_SCHEDULER',TRUE);
+
+*** List all Scheduler Job
+    
+    select JOB_NAME from user_scheduler_jobs where job_name like 'MU_SCHEDU%';  
+
+*** Get information on Scheduled Job
+
+select * from user_scheduler_job_log where job_name like 'MU_SCHEDULER' order by log_date desc;  
+
+*** Get details on job run
+
+select * from user_scheduler_job_run_details where job_name like 'MU_SCHEDULER';
+
+*** Example to run job immediately
+
+begin  
+dbms_scheduler.run_job('JOB_COLLECT_SESS_DATA',TRUE);  
+end;  
+
+*** Example to restart job
+
+begin  
+dbms_scheduler.disable('JOB_COLLECT_INST_INFO');  
+dbms_scheduler.enable('JOB_COLLECT_INST_INFO');  
+end;  
+
+*** Select job status
+
+select * from user_scheduler_jobs;  
+
+
+** Synonyms
+*** Script to create synonyms of all objects
+
+Select 'Create private synonym '||object_name||' for MEX_OPER_MSTR.'||object_name||' ;'
+from user_objects
+where object_type in (
+'TABLE',
+'VIEW',
+'SEQUENCE',
+'PROCEDURE',
+'PACKAGE',
+'FUNCTION'
+)
+
+
+
+
+** Tracing
+*** Pre-requisites of tracing
+
+ALTER SYSTEM SET TIMED_STATISTICS = TRUE;
+
+@ORACLE_HOME\rdbms\admin\utlxplan.sql
+CREATE PUBLIC SYNONYM PLAN_TABLE FOR SYS.PLAN_TABLE;
+GRANT SELECT, INSERT, UPDATE, DELETE ON SYS.PLAN_TABLE TO PUBLIC;
+
+*** Enabling Trace
+
+ALTER SESSION SET SQL_TRACE = TRUE;
+
+SELECT COUNT(*)
+FROM   dual;
+
+ALTER SESSION SET SQL_TRACE = FALSE;
+
+*** TKPROF
+
+The resulting trace file will be located in the USER_DUMP_DEST directory. This can then be interpreted using TKPROF at the netmmand prompt as follows:
+
+TKPROF <trace-file> <output-file> explain=user/password@service table=sys.plan_table
+
+*** Fine Grain Auditing
+
+
+Oracle FGA 10g onwards- No parameter changes or any other changes.
+
+
+exec dbms_fga.add_policy (object_schema => 'BETA',
+object_name => 'DB_COLLECTIONEXPORT',
+policy_name => 'DBCOLEXPAUDIT', 
+audit_column_opts => DBMS_FGA.ALL_COLUMNS,
+audit_condition => NULL,
+audit_trail => DBMS_FGA.DB_EXTENDED,
+statement_types => 'SELECT,INSERT,UPDATE,DELETE');
+
+SQL> select object_schema,object_name, policy_name, policy_text, policy_column, enabled, sel, ins, upd, del from dba_audit_policies;
+
+OBJECT_SCHEMA                  OBJECT_NAME
+------------------------------ ------------------------------
+POLICY_NAME
+------------------------------
+POLICY_TEXT
+--------------------------------------------------------------------------------
+POLICY_COLUMN                  ENA SEL INS UPD DEL
+------------------------------ --- --- --- --- ---
+RESOLVER                       DB_COLLECTIONEXPORT
+DBCOLEXPAUDIT
+
+DBNAME                         YES YES YES YES YES
+
+
+To check the Audit trail 
+
+SQL>  select db_user, object_schema, object_name, policy_name, sql_text from dba_fga_audit_trail;
+
+DB_USER                        OBJECT_SCHEMA
+------------------------------ ------------------------------
+OBJECT_NAME
+--------------------------------------------------------------------------------
+POLICY_NAME
+------------------------------
+SQL_TEXT
+--------------------------------------------------------------------------------
+BETA                           BETA
+DB_COLLECTIONEXPORT
+DBCOLEXPAUDIT
+select * from BETA.DB_COLLECTIONEXPORT where rownum<5
+
+
+
+*** Audit records select
+select os_username,
+username,
+userhost,
+to_char(timestamp,'mm/dd/yyyy hh24:mi:ss') timestamp,
+returncode
+from dba_audit_session
+where action_name = 'LOGON'
+and returncode > 0
+and timestamp > (systimestamp - INTERVAL '0 02:00:00.0' DAY TO SECOND(1) )
+order by timestamp ;
+
+
+** Analyze Table
+*** Table Analyze
+    
+    EXEC dbms_stats.gather_table_stats('SIS','AGREEMENT_INFO',cascade=>TRUE);
+
+*** Schema Analyze
+
+    EXEC DBMS_STATS.gather_schema_stats(ownname => 'KAS_TST', cascade =>true,estimate_percent => dbms_stats.auto_sample_size,degree => 8);
+
+
+** Table fragmentation
+*** Chain row count
+
+select 'alter table '||owner||'.'||table_name||' move;' from dba_tables where chain_cnt>0;
+
+
+select table_name,round((blocks*8),2) "size (kb)" , 
+                            round((num_rows*avg_row_len/1024),2) "actual_data (kb)",
+                            (round((blocks*8),2) - round((num_rows*avg_row_len/1024),2)) "wasted_space (kb)"
+from dba_tables
+where (round((blocks*8),2) > round((num_rows*avg_row_len/1024),2))
+order by 4 desc
+
+
+
+SQL> alter table mytable enable row movement;
+Table altered
+
+SQL> alter table mytable shrink space;
+Table altered
+
+
+** ASH and AWR
+*** Create AWR snapshot
+
+execute dbms_workload_repository.create_snapshot
+
+*** Oracle Scripts for AWR
+
+ashrpt.sql     -- basic ASH report
+
+
+awrrpt.sql      -- basic AWR report
+awrsqrpt.sql    -- Standard SQL statement Report
+ 
+awrddrpt.sql    -- Period diff on current instance
+ 
+awrrpti.sql     -- Workload Repository Report Instance (RAC)
+awrgrpt.sql     -- AWR Global port (RAC)
+awrgdrpt.sql    -- AWR Global Diff Report (RAC)
+ 
+awrinfo.sql     -- Script to output general AWR information
+
+
+** Session Management
+*** List sessions all
+
+COLUMN spid FORMAT A10
+COLUMN username FORMAT A10
+COLUMN program FORMAT A45
+
+SELECT ''''||s.sid||','||s.serial#||',@'||s.inst_id || '''' "KILLER",
+s.sid ,
+p.spid,
+s.username,
+s.program
+FROM   gv$session s
+JOIN gv$process p ON p.addr = s.paddr AND p.inst_id = s.inst_id
+WHERE  s.type != 'BACKGROUND';
+
+*** List session by user
+
+select s.sid, s.serial#, s.status, p.spid 
+from v$session s, v$process p 
+where s.username = 'MEX_OPER_TST' 
+and p.addr (+) = s.paddr;
+
+*** Kill Session
+
+ALTER SYSTEM KILL SESSION 'sid,serial#,@inst_id' IMMEDIATE;
+
+*** Current sessions and wait
+select sid, event, seconds_in_wait secs_wait, state,p1,p2,p3,wait_time,p1text,p2text,p3text
+from v$session_wait where sid in (select a.sid from v$session a, v$process b where a.paddr = b.addr and  a.status = 'ACTIVE' and a.username is not null) order by 1
+
+*** Kill blocking sessions only
+select 'ALTER SYSTEM KILL SESSION '''||s1.sid||','||s1.serial#||',@'||s1.inst_id||''' IMMEDIATE;'
+    from Gv$lock l1, Gv$session s1, v$lock l2, v$session s2
+    where s1.sid=l1.sid and s2.sid=l2.sid
+    and l1.BLOCK=1 and l2.request > 0
+    and l1.id1 = l2.id1
+    and l2.id2 = l2.id2 ;
+    
+
+** Cloning
+*** Tablespace Cloning
+
+select 'create tablespace ' || df.tablespace_name || chr(10) ||
+ ' datafile ''' || df.file_name || ''' size ' || df.bytes ||
+ decode(autoextensible,'N',null, chr(10) || ' autoextend on maxsize ' ||
+ maxbytes) ||
+ chr(10) ||
+ 'default storage ( initial ' || initial_extent ||
+ decode (next_extent, null, null, ' next ' || next_extent ) ||
+ ' minextents ' || min_extents ||
+ ' maxextents ' ||  decode(max_extents,'2147483645','unlimited',max_extents)  || ') ;'
+ from dba_data_files df, dba_tablespaces t   where df.tablespace_name=t.tablespace_name 
+ /
+
+
+
+
+select 'create tablespace ' || df.tablespace_name || chr(10) || ' datafile ''' || df.file_name || ''' size ' || df.bytes  || ' autoextend on; '  
+from dba_data_files df, dba_tablespaces t   where df.tablespace_name=t.tablespace_name 
+/
+
+*** User profile change
+
+ALTER PROFILE DEFAULT LIMIT PASSWORD_LIFE_TIME UNLIMITED
+
+*** User clone
+
+SET SERVEROUTPUT ON SIZE 100000
+declare
+  def_ts varchar2(30);
+  tmp_ts varchar2(30);
+  profile varchar2(30);
+  priv varchar2(40);
+  admin varchar2( 3);
+  with_adm varchar2(18);
+  quota varchar2(20);
+  orig_user Varchar2(30):='&1';
+  clone varchar2(30):='&2';
+  pw varchar2(30):='&3';
+begin
+
+--User creation  
+dbms_output.put_line('--User creation');
+
+  select default_tablespace, temporary_tablespace, profile into def_ts, tmp_ts , profile from sys.dba_users where username = orig_user;
+   dbms_output.put_line('create user ' || clone  || ' identified by ' || pw ||
+    ' default tablespace '   || def_ts            ||
+    ' temporary tablespace ' || tmp_ts            ||
+    ' profile '              || profile||';');
+    
+    
+--Privilages parsing
+
+dbms_output.put_line('--Privilage parsing now');
+
+  for r in (
+    select
+      privilege, admin_option
+    from
+      sys.dba_sys_privs
+    where
+      grantee = orig_user order by privilege) loop
+    if r.admin_option = 'YES' then
+      with_adm := ' with admin option';
+    else
+      with_adm := '';
+    end if;
+    dbms_output.put_line('grant ' || r.privilege || ' to ' || clone ||
+      with_adm||';');
+
+  end loop;
+
+-- Role parsing
+
+dbms_output.put_line('--Role parsing now');
+
+  for r in (
+    select granted_role, admin_option
+    from   sys.dba_role_privs
+    where  grantee = orig_user)
+    loop
+    if r.admin_option = 'YES' then
+      with_adm := ' with admin option';
+    else
+      with_adm := '';
+    end if;
+    dbms_output.put_line('grant ' || r.granted_role || ' to ' || clone || with_adm||';');
+   end loop;
+  
+-- Downward privs parsing
+
+dbms_output.put_line('--Downward privilages parsing now');
+  
+  for r in (
+    select owner, table_name, privilege, grantable
+    from sys.dba_tab_privs
+    where grantee = orig_user) loop
+    if r.grantable = 'YES' then
+      with_adm := ' with admin option';
+    else
+      with_adm := '';
+    end if;
+    dbms_output.put_line(   'grant ' || r.privilege ||
+      ' on '   || r.owner     || '.' || r.table_name ||
+      ' to '   || clone       || with_adm||';');
+
+      end loop;
+ 
+ -- Column privs parsing
+ 
+ dbms_output.put_line('--Column privilages parsing now');
+
+ 
+ for r in (
+    select owner, table_name, column_name, privilege, grantable
+    from sys.dba_col_privs
+    where grantee = orig_user) loop
+    if r.grantable = 'YES' then
+      with_adm := ' with admin option';
+    else
+      with_adm := '';
+    end if;
+    
+    dbms_output.put_line(  'grant ' || r.privilege   ||
+      '('      || r.column_name || ')' ||
+      ' on '   || r.owner       || '.' || r.table_name ||
+      ' to ' || clone ||
+      with_adm||';');
+
+    end loop;
+  
+  
+  
+  -- Quotas parsing
+  
+  dbms_output.put_line('--Quotas parsing now');
+
+  for r in (
+    select tablespace_name, max_bytes
+    from sys.dba_ts_quotas
+    where username = orig_user) loop
+    if r.max_bytes = -1 then
+      quota := 'unlimited';
+    else
+      quota := to_char(r.max_bytes);
+    end if;
+    
+    dbms_output.put_line(  'alter user ' || clone    ||
+      ' quota '     || quota    ||
+      ' on '        || r.tablespace_name||';');
+
+  end loop;
+  
+  -- Synonym parsing
+  
+  dbms_output.put_line('--Synonym parsing now');
+
+  for r in (
+    select synonym_name, table_owner, table_name
+    from dba_synonyms
+    where owner = orig_user) loop
+    dbms_output.put_line(  'create synonym ' || clone || '.' || r.synonym_name ||
+      ' for ' || r.table_owner   || '.' || r.table_name||';');
+
+   end loop;
+   
+end;
+/
+
+*** Extract DDLs
+-- table_name, owner
+SELECT DBMS_METADATA.GET_DDL('TABLE','MERCHANT_MACHINES','APPADMIN') FROM dual;
+ 
+set pagesize 0
+set long 90000
+SELECT DBMS_METADATA.GET_DDL('VIEW','V_INSTANCE') FROM dual;
+ 
+set pagesize 0
+set long 90000
+SELECT DBMS_METADATA.GET_DDL('INDEX','X_ALLTRNLOG_ID') FROM dual;
+ 
+set pagesize 0
+set long 90000
+SELECT DBMS_METADATA.GET_DDL('PACKAGE_BODY','PK_CRACKER_BOX') FROM dual;
+ 
+
+set pagesize 0
+set long 90000
+SELECT DBMS_METADATA.GET_DDL('PACKAGE','PK_OS_CALLS') FROM dual;
+
+
+** Lights on scripts
+*** Blocking locks
+
+select s1.username || '@' || s1.machine ||
+    ' ( SID=' || s1.sid || ' )  is blocking ' ||
+    s2.username || '@' || s2.machine || ' ( SID=' || s2.sid || ' ) ' AS blocking_status
+    from v$lock l1, v$session s1, v$lock l2, v$session s2
+    where s1.sid=l1.sid and s2.sid=l2.sid
+    and l1.BLOCK=1 and l2.request > 0
+    and l1.id1 = l2.id1
+    and l2.id2 = l2.id2 ;
+
+*** All locks with details
+set feedback off
+col oracle_username for a15
+col owner for a15
+col object_name for a15
+col inst_sid_s# for a13
+col username for a14
+col obj_lck for a18
+col blk_info for a14
+col f_blk_info for a14
+col event for a30
+col s_wt for 9999
+col chain_signature for a65
+col Wsecs for 999
+
+prompt DML locks from current instance (dba_dml_locks)
+
+select session_id sid, owner,name,mode_held,mode_requested from dba_dml_locks;
+
+prompt
+prompt sessions with lockwait from gv$session
+
+select inst_id||' '||sid||','||serial# inst_sid_s#, username, row_wait_obj#||','||row_wait_block#||','||row_wait_row# obj_lck, 
+       blocking_session_Status||' '||blocking_instance||','||blocking_session blk_info,        
+       final_blocking_session_Status||' '||final_blocking_instance||','||final_blocking_session f_blk_info, 
+       event, seconds_in_wait s_wt
+from gv$session 
+where lockwait is not null
+order by inst_id;
+
+prompt
+prompt waitchains (all events)
+
+select instance||' '||sid||','||sess_serial# inst_sid_s#, chain_signature,num_waiters wrs#,in_wait_secs Wsecs,row_wait_obj#||','||row_wait_block# obj_lck,
+       blocker_is_valid||' '||blocker_instance||','||blocker_sid blk_info
+from v$wait_chains
+where in_wait='TRUE' and blocker_is_valid='TRUE'
+order by instance,chain_signature;
+
+prompt
+prompt final blockers from gv$session (all events)
+
+select final_blocking_instance f_blk_inst, final_blocking_session f_blk_sess, event, sql_id, row_wait_obj#||','||row_wait_block# obj_lck, count(*) num_blocked, max(wait_time_micro) max_wait_musec
+from gv$session 
+where final_blocking_session_Status='VALID'
+group by final_blocking_instance, final_blocking_session, event, sql_id, row_wait_obj#||','||row_wait_block#
+order by 1;
+
+*** Long running queries
+
+select
+a.sid,a.serial#,a.username,a.osuser,c.start_time,
+b.spid,a.status,a.machine,
+a.action,a.module,a.program
+from
+v$session a, v$process b, v$transaction c,
+v$sqlarea s
+Where
+a.paddr = b.addr
+and a.saddr = c.ses_addr
+and a.sql_address = s.address (+)
+and to_date(c.start_time,'mm/dd/yy hh24:mi:ss') <= sysdate - (15/1440) -- running for 15 minutes
+order by c.start_time
+
+*** Alert log
+
+SELECT ORIGINATING_TIMESTAMP,   MODULE_ID,         PROCESS_ID,         MESSAGE_TEXT    FROM X$DBGALERTEXT
+where rownum < 50
+
+*** Tablespace with low space I
+
+column "Tablespace"  format a20;
+column "Allocated"   format a20;
+column "Free Space"  format a20;
+column "Space Used"  format a20;
+column "PCT Free"  format a10;
+
+
+SELECT  a.tablespace_name "Tablespace", 
+        to_char(round(b.bytes,1)/1048576 ,'999999999999.9')||' Meg' "      Allocated", 
+        to_char(round(a.bytes,1)/1048576,'99999999999.9')||' Meg' "      Free Space", 
+        to_char((round(b.bytes  /1048576,1)-round(a.bytes/1048576,1)),'99999.9')||' Meg' "   Space Used" ,
+        round(round(a.bytes,1)/round(b.bytes,1)*100,1) || ' %' "Pct Free"
+FR
+OM 
+        (SELECT tablespace_name,
+                round(sum(bytes),1) bytes 
+        FROM    dba_free_space 
+        GROUP BY tablespace_name
+        ) 
+        a, 
+        (SELECT tablespace_name,
+                round(sum(bytes),1) bytes 
+        FROM    dba_data_files 
+        GROUP BY tablespace_name 
+        ) 
+        b 
+WHERE   a.tablespace_name                              = b.tablespace_name 
+and round(round(a.bytes,1)/round(b.bytes,1)*100,1) < 20;
+
+*** Tablespace with low space II
+column dummy noprint
+column  pct_used format 999.9       heading "%|Used" 
+column  name    format a19      heading "Tablespace Name" 
+column  Kbytes   format 999,999,999    heading "KBytes" 
+column  used    format 999,999,999   heading "Used" 
+column  free    format 999,999,999  heading "Free" 
+column  largest    format 999,999,999  heading "Largest" 
+column  max_size format 999,999,999 heading "MaxPoss|Kbytes"
+column  pct_max_used format 999.9       heading "%|Max|Used" 
+break   on report 
+netpute sum of kbytes on report 
+netpute sum of free on report 
+netpute sum of used on report 
+
+select (select decode(extent_management,'LOCAL','*',' ') || 
+               decode(segment_space_management,'AUTO','a ','m ')
+	      from dba_tablespaces where tablespace_name = b.tablespace_name) || nvl(b.tablespace_name, 
+			 nvl(a.tablespace_name,'UNKOWN')) name,
+	   kbytes_alloc kbytes, 
+	   kbytes_alloc-nvl(kbytes_free,0) used,
+	   nvl(kbytes_free,0) free, 
+	   ((kbytes_alloc-nvl(kbytes_free,0))/ 
+						  kbytes_alloc)*100 pct_used,
+	   nvl(largest,0) largest,
+	   nvl(kbytes_max,kbytes_alloc) Max_Size,
+	   decode( kbytes_max, 0, 0, (kbytes_alloc/kbytes_max)*100) pct_max_used
+from ( select sum(bytes)/1024 Kbytes_free, 
+			  max(bytes)/1024 largest,
+			  tablespace_name
+	   from  sys.dba_free_space 
+	   group by tablespace_name ) a,
+     ( select sum(bytes)/1024 Kbytes_alloc, 
+			  sum(maxbytes)/1024 Kbytes_max,
+			  tablespace_name 
+	   from sys.dba_data_files 
+	   group by tablespace_name 
+	   union all
+      select sum(bytes)/1024 Kbytes_alloc, 
+			  sum(maxbytes)/1024 Kbytes_max,
+			  tablespace_name 
+	   from sys.dba_temp_files 
+	   group by tablespace_name )b
+where a.tablespace_name (+) = b.tablespace_name
+
+*** Tablespace with AUTOEXTEND
+set lines 180
+col freemb for 99999 heading  "Free Sp. avlble|(in DBfiles)"
+col tablespace_name for a30
+col sizemb for 99999 heading  "Tot dbfiles size"
+col maxmd for 999999 heading  "Tot avlble size|(Incl. Extentable size)"
+col status for a12
+col totfree for 999999 heading  "Total free space"
+col nof for 9999 heading "No: Of Files"
+SELECT ts.tablespace_name tablespace_name, ts.status,"File Count" nof,
+round(nvl("FREE(MB)",0)) freemb,"SIZE(MB)" sizemb,round("MAX_EXT") maxmd, round("MAX_EXT"-"SIZE(MB)"+nvl("FREE(MB)",0)) totfree,
+round(("MAX_EXT"-"SIZE(MB)"+nvl("FREE(MB)",0))/df."MAX_EXT" * 100)  "Free(%)"
+FROM (SELECT tablespace_name,
+SUM(bytes) / (1024 * 1024*1024) "FREE(MB)"
+FROM dba_free_space
+GROUP BY tablespace_name) fr,
+(SELECT tablespace_name,
+SUM(bytes) / (1024 * 1024*1024) "SIZE(MB)",
+COUNT(*) "File Count",
+SUM(greatest(bytes,maxbytes)) / (1024*1024 * 1024) "MAX_EXT"
+FROM dba_data_files
+GROUP BY tablespace_name) df,
+(SELECT tablespace_name, status 
+FROM dba_tablespaces) ts
+WHERE ts.tablespace_name  = df.tablespace_name
+AND fr.tablespace_name (+) = ts.tablespace_name
+order by 8 
+/
+
+*** Finding the datafiles
+
+select file_name, bytes/1024/1024/1024 , autoextensible, maxbytes/1024/1024/1024 from dba_data_files where tablespace_name in ('SYSAUX');
+
+*** Tablespaces without space at all
+
+column "Tablespace"  format a20
+column "File Name"   format a20
+column "Allocated"  format a20
+column "Free Space"  format a20
+column "Problem"  format a20
+
+SELECT a.tablespace_name "Table Space", b.file_name,
+          TO_CHAR (ROUND (b.BYTES, 1) / 1048576,
+                   '999999999999.9') ||
+        ' Meg' "Allocated",
+          TO_CHAR (NVL (ROUND (a.BYTES, 1) / 1048576, 0),
+                   '99999999999.9' ||
+                  )
+        ' Meg' "Free S***pace",
+       'Prblm Nofree space' problem
+  FROM (SELECT   tablespace_name, ROUND (SUM (BYTES), 1) BYTES
+            FROM dba_free_space
+        GROUP BY tablespace_name) a,
+       (SELECT   tablespace_name, file_name, ROUND (SUM (BYTES), 1) BYTES
+            FROM dba_data_files
+        GROUP BY tablespace_name, file_name) b
+ WHERE b.tablespace_name = a.tablespace_name(+)
+AND
+a.tablespace_name IS NULL
+;
+
+*** Shrink datafile
+
+select 'alter database datafile '''||file_name||''' resize ' ||
+       ceil( (nvl(hwm,1)*&&blksize)/1024/1024 )  || 'm;' cmd
+from dba_data_files a,
+     ( select file_id, max(block_id+blocks-1) hwm
+         from dba_extents
+        group by file_id ) b
+where a.file_id = b.file_id(+)
+  and ceil( blocks*&&blksize/1024/1024) -
+      ceil( (nvl(hwm,1)*&&blksize)/1024/1024 ) > 0
+/
+
+*** Archivelog generation rate
+SELECT to_date(first_time) DAY,
+to_char(sum(decode(to_char(first_time,'HH24'),'00',1,0)),'9999') "00",
+to_char(sum(decode(to_char(first_time,'HH24'),'01',1,0)),'9999') "01",
+to_char(sum(decode(to_char(first_time,'HH24'),'02',1,0)),'9999') "02",
+to_char(sum(decode(to_char(first_time,'HH24'),'03',1,0)),'9999') "03",
+to_char(sum(decode(to_char(first_time,'HH24'),'04',1,0)),'9999') "04",
+to_char(sum(decode(to_char(first_time,'HH24'),'05',1,0)),'9999') "05",
+to_char(sum(decode(to_char(first_time,'HH24'),'06',1,0)),'9999') "06",
+to_char(sum(decode(to_char(first_time,'HH24'),'07',1,0)),'9999') "07",
+to_char(sum(decode(to_char(first_time,'HH24'),'08',1,0)),'9999') "08",
+to_char(sum(decode(to_char(first_time,'HH24'),'09',1,0)),'9999') "09",
+to_char(sum(decode(to_char(first_time,'HH24'),'10',1,0)),'9999') "10",
+to_char(sum(decode(to_char(first_time,'HH24'),'11',1,0)),'9999') "11",
+to_char(sum(decode(to_char(first_time,'HH24'),'12',1,0)),'9999') "12",
+to_char(sum(decode(to_char(first_time,'HH24'),'13',1,0)),'9999') "13",
+to_char(sum(decode(to_char(first_time,'HH24'),'14',1,0)),'9999') "14",
+to_char(sum(decode(to_char(first_time,'HH24'),'15',1,0)),'9999') "15",
+to_char(sum(decode(to_char(first_time,'HH24'),'16',1,0)),'9999') "16",
+to_char(sum(decode(to_char(first_time,'HH24'),'17',1,0)),'9999') "17",
+to_char(sum(decode(to_char(first_time,'HH24'),'18',1,0)),'9999') "18",
+to_char(sum(decode(to_char(first_time,'HH24'),'19',1,0)),'9999') "19",
+to_char(sum(decode(to_char(first_time,'HH24'),'20',1,0)),'9999') "20",
+to_char(sum(decode(to_char(first_time,'HH24'),'21',1,0)),'9999') "21",
+to_char(sum(decode(to_char(first_time,'HH24'),'22',1,0)),'9999') "22",
+to_char(sum(decode(to_char(first_time,'HH24'),'23',1,0)),'9999') "23"
+from
+v$log_history
+where to_date(first_time) > sysdate -8
+GROUP by
+to_char(first_time,'YYYY-MON-DD'), to_date(first_time)
+order by to_date(first_time);
+
+*** Archivelog per day with size
+SELECT A.*,
+Round(A.NUMBER_of_LOGS*B.AVG#/1024/1024) Daily_Avg_Mb
+FROM
+(
+SELECT
+To_Char(First_Time,'YYYY-MM-DD') DAY,
+Count(1) NUMBER_OF_LOGS,
+Min(RECID) MIN_RECID,
+Max(RECID) MAX_RECID
+FROM
+v$log_history
+GROUP
+BY To_Char(First_Time,'YYYY-MM-DD')
+ORDER
+BY 1 DESC
+) A,
+(
+SELECT
+Avg(BYTES) AVG#,
+Count(1) NUMBER_of_LOGS,
+Max(BYTES) Max_Bytes,
+Min(BYTES) Min_Bytes
+FROM
+v$log
+) B
+;
+
+*** Clean up old CRS logs
+
+sudo find . -mtime +3 -name *.l0* -exec rm -f {} \;
+
+*** Temp Usage by each session
+SELECT S.sid || ',' || S.serial# sid_serial, S.username, S.osuser, P.spid, S.module,
+P.program, SUM (T.blocks) * TBS.block_size / 1024 / 1024 mb_used, T.tablespace,
+COUNT(*) statements
+FROM v$sort_usage T, v$session S, dba_tablespaces TBS, v$process P
+WHERE T.session_addr = S.saddr
+AND S.paddr = P.addr
+AND T.tablespace = TBS.tablespace_name
+GROUP BY S.sid, S.serial#, S.username, S.osuser, P.spid, S.module,
+P.program, TBS.block_size, T.tablespace
+ORDER BY sid_serial;
+
+
+** Unix netmands
+*** Recursive search under all directories
+
+find ./ -name emctl* -print
+
+*** Renaming within the name
+
+    ls -1 *old* | awk '{print "rman "$1" "$1}' | sed s/old/new/2 | sh 
+*** Remove files alone
+
+    ls -l * | grep -v drwx | awk '{print "rm "$9}' | sh 
+or with awk alone:
+ls -l|awk '$1!~/^drwx/{print $9}'|xargs rm 
+Be careful when trying this out in your home directory. We remove files! 
+
+*** Remove directories alone
+
+ls -l | grep '^d' | awk '{print "rm -r "$9}' | sh 
+or
+ls -p | grep /$ | wk '{print "rm -r "$1}' 
+or with awk alone:
+ls -l|awk '$1~/^d.*x/{print $9}'|xargs rm -r 
+Be careful when trying this out in your home directory. We remove things! 
+
+*** Killing process by name
+
+kill `ps -ef | grep PTSPOC | egrep -v grep | awk '{print $2}'` 
+or with awk alone:
+ps auxww | awk '$0~/netscape/&&$0!~/awk/{print $2}' |xargs kill 
+It has to be adjusted to fit the ps netmand on whatever unix system you are on. Basically it is: "If the process is called netscape and it is not called 'grep netscape' (or awk) then print the pid" 
+
+*** Mount CDROM
+
+mount -t iso9660 /dev/hdc(scd) /cdrom/
+
+lsof /mnt/cdrom   ------ which tells u which program uses cdrom.
+
+*** RPM queries
+
+rpm --query --whatprovides 'libXp.so.6'
+
+rpm -ql libaio-devel-0.3.106-5
+lists all the files installed
+
+*** PTree in Linux
+
+ps -efjH 
+
+*** Email from Linux
+
+echo "Body" | mutt -a backup.zip -s "Subject" calvin@cnh.net
+
+*** Solaris Release
+
+solaris release
+ pkginfo -l SUNWsolnm| grep VERSION
+   VERSION:  10,REV=2010.08.11.10.56
+
+*** Delete files older than 3 days
+
+find . -mtime +3 -exec rm -f {} \; 
+
+*** Crontab
+
+Crontab 
+
+	*    *    *    *    *  netmand to be executed
+	-    -    -    -    -
+	¦    ¦    ¦    ¦    ¦
+	¦    ¦    ¦    ¦    ¦
+	¦    ¦    ¦    ¦    +----- day of week (0 - 6) (0 is Sunday, or use names)
+	¦    ¦    ¦    +---------- month (1 - 12)
+	¦    ¦    +--------------- day of month (1 - 31)
+	¦    +-------------------- hour (0 - 23)
+	--	+------------------------- min (0 - 59)
+
+*** Oracle SID from Oratab
+
+awk '
+BEGIN   {
+        FS = ":"
+}
+{ sub( /#.*$/, "" ) }
+/./     {
+        name = $1
+        sub( /[0-9]*$/, "", name )
+        print name
+}
+' /etc/oratab
+
+*** What is running in processor
+
+
+mpstat -P ALL 1
+
+*** DOT profile file
+
+HOST=`uname -n`
+export HOST
+PS1='[$HOST:$ORACLE_SID $PWD] '
+alias gg='/u01/app/ogg/ggsci'
+
+*** Find the largest files in the directory
+ find . -type f -size +50000k -exec ls -lh {} \; | awk '{ print $9 ": " $5 }'
+
+*** StrictHostKeyChecking
+In your ~/.ssh/config (if this file doesn't exist, just create it):
+
+Host *
+    StrictHostKeyChecking no
+    
+*** Difference between files line by line
+diff -a --suppress-netmon-lines -y sumfile.dat success.dat > failures.dat
+awk 'FNR==NR{a[$0];next}!($0 in a)' file2 file1
+
+*** Veritas cluster list disks
+ vxdisk -o alldgs -e list
+
+
+** Flashback
+*** Enabling Flashback
+
+Make sure the database is in archive mode.
+  
+
+Configure the recovery area by setting the two parameters: 
+
+ db_recovery_file_dest 
+ db_recovery_file_dest_size 
+
+Open the database in MOUNT EXCLUSIVE mode and turn on the flashback feature: 
+
+SQL> STARTUP MOUNT EXCLUSIVE;
+SQL> ALTER DATABASE FLASHBACK ON;
+
+Set the Flashback Database retention target: 
+
+ db_flashback_retention_target 
+
+Determine if Flashback Database is enabled: 
+
+SQL> select flashback_on  from   v$database;
+
+           FLASHBACK_ON
+           ------------           YES
+
+*** Oldest Flashback time
+
+SELECT OLDEST_FLASHBACK_SCN, OLDEST_FLASHBACK_TIME FROM   V$FLASHBACK_DATABASE_LOG;
+The most recent SCN that can be reached with Flashback Database is the current SCN of the database. The following query returns the current SCN:
+
+*** Flashback to timestamp
+
+FLASHBACK DATABASE TO TIMESTAMP to_timestamp('2012-08-22 08:00:00', 'YYYY-MM-DD HH24:MI:SS');
+
+
+select current_scn from V$database;
+
+*** Restore point guarantee
+
+SELECT NAME, SCN, TIME, DATABASE_INCARNATION#,  GUARANTEE_FLASHBACK_DATABASE FROM   V$RESTORE_POINT WHERE  GUARANTEE_FLASHBACK_DATABASE='YES';
+ 
+NAME                   SCN TIME                  DATABASE_INCARNATION# GUA
+--------------- ---------- --------------------- --------------------- ---
+BEFORE_CHANGES     5753126 04-MAR-05 12.39.45 AM                     2 YES
+
+
+shutdown immediate;
+
+startup mount;
+
+flashback database to restore point BEFORE_CHANGES;
+
+alter database open resetlogs;
+
+
+
+** Oracle Application Server
+*** Status of App server 
+
+opmnctl status -l
+
+*** Check logfiles
+
+OH/opmn/logs/opmn.log
+OH/opmn/logs/*
+OH/j2ee/<OC4J container>/log/*
+OH/Apache/Apache/error_log
+
+*** Configuration files
+
+OH/opmn/conf/opmn.xml
+OH/Apache/Apache/conf/httpd.conf
+
+
+** User management
+*** Users with default passwords
+
+SELECT d.username, u.account_status
+FROM dba_users_with_defpwd d, dba_users u
+WHERE d.username = u.username
+AND account_status = 'OPEN'
+ORDER BY 2,1;
+
+*** 11g change password
+
+
+
+SQL> select password,spare4 from user$ where name='AMIT';
+
+PASSWORD                       SPARE4
+------------------------------ ----------------------------------------------------------------------
+9DEC0D889E8E9A6B               S:F5DEBF680433864AA5A744C2368D8677A120939D083D74A2F6E99C5952AE
+
+SQL> alter user amit identified by values 'S:F5DEBF680433864AA5A744C2368D8677A120939D083D74A2F6E99C5952AE;9DEC0D889E8E9A6B';
+
+User altered.
+
+
+** Checklist for new instance
+*** Setting up oracle user and unix team
+*** Installing oracle
+*** Updating patches if anything required.
+*** Create db instances.
+*** Setting up listener configuration.
+*** Rman configuration
+*** Backup schedules
+
+
+** SQL server
+*** Backup database
+
+backup database  infy_test_3 to disk ='G:\ToDelete\infy_test_3_291010.bak'
+
+*** Drop database
+
+drop  database infy_test_3
+
+*** Restore database
+
+
+restore database infy_test_3 from disk='G:\ToRestore\EJOR_1624710.bak' with move 'ELSMT_Data' to 'G:\MSSQL$DEV07\Data\infy_test_3.mdf',move 'ELSMT_Log' to 'G:\MSSQL$DEV07\Data\infy_test_3.ldf'
+
+restore filelistonly from disk='G:\ToRestore\EJOR_1624710.bak'
+
+restore filelistonly from disk='G:\ToDelete\infy_test_3_291010.bak'
+
+*** Change privileges
+
+use infy_test_3
+
+EXEC sp_grantdbaccess 'DataUndo'
+EXEC sp_grantdbaccess 'em'
+EXEC sp_addrolemember 'db_owner', 'em'
+EXEC sp_addrolemember 'db_datareader', 'DataUndo'
+
+
+exec sp_change_users_login 'report'
+
+exec sp_change_users_login 'update_one','dataundo','dataundo'
+exec sp_change_users_login 'update_one','em','em'
+
+
+** NLS Database
+*** NLS tables
+
+nls_database_parameters
+nls_instance_parameters
+nls_session_parameters
+db<instance< session
+
+*** Queries
+
+select userenv('language') from dual;
+
+alter session set NLS_DATE_FORMAT='dd/mm/yyyy HH24:MI:SS';
+
+
+** TEMP Tablespace
+*** TEMP segments used
+
+select 
+   srt.tablespace, 
+   srt.segfile#, 
+   srt.segblk#, 
+   srt.blocks, 
+   a.sid, 
+   a.serial#, 
+   a.username, 
+   a.osuser, 
+   a.status 
+from 
+   v$session    a,
+   v$sort_usage srt 
+where 
+   a.saddr = srt.session_addr 
+order by 
+   srt.tablespace, srt.segfile#, srt.segblk#, 
+   srt.blocks;
+
+*** TEMP tablespace SHRINK
+
+ALTER TABLESPACE temp SHRINK SPACE;
+
+*** Session TEMP usage
+
+
+select s.username, u."USER", u.tablespace, u.contents, u.extents, u.blocks
+from   sys.v_$session s, sys.v_$sort_usage u
+where  s.saddr = u.session_addr
+/
+
+
+select s.osuser, s.process, s.username, s.serial#,
+       sum(u.blocks)*vp.value/1024 sort_size
+from   sys.v_$session s, sys.v_$sort_usage u, sys.v_$parameter vp
+where  s.saddr = u.session_addr
+  and  vp.name = 'db_block_size'
+  and  s.osuser like '&1'
+group  by s.osuser, s.process, s.username, s.serial#, vp.value
+/
+
+
+** Miscellanious
+*** Send email from oracle
+
+begin
+  utl_mail.send(
+  sender     => 'hello@domain.net',
+  recipients => 'hello@domain.net',
+  message    => 'Hello World'
+  );
+end;
+
+*** DB hidden parameters
+
+SELECT ksppinm name,
+ksppstvl value,
+ksppdesc description
+FROM x$ksppi x, x$ksppcv y
+WHERE (x.indx = y.indx)
+AND x.inst_id=userenv('instance')
+AND x.inst_id=y.inst_id
+AND ksppinm LIKE '\_%' ESCAPE '\'
+ORDER BY name;
+
+*** Vi shortcuts
+
+k		Move one line upwards
+l		Move one character to the right
+h		Move one character to the left
+w		Move one word to the right
+W		Move one word to the right past punctuation
+b		Move one word to the left
+B		Move one word to the left past punctuation
+e		Move to the end of the current word
+1G		Move to the beginning of the file
+H		Move to the top of the current screen
+M		Move to the middle of the current screen
+L		Move to the bottom of the current screen
+Ctrl-G		Move to the last line in the file
+Ctrl-F		Move one screen towards the end of the file
+Ctrl-D		Move 1/2 screen towards the end of the file
+Ctrl-B		Move one screen towards the beginning of the file
+Ctrl-U		Move 1/2 screen towards the beginning of the file
+Ctrl-L		Refresh the screen
+5G		Move to line 5 of the file (5 can be any line number)
+/string		Find text string forward
+?string		Find text string backward
+n 		Find forward next string instance after a string search
+N		Find backward next string instance after a string search
+:g/X/s//x/g	Global Search and replace (X=search object x=replace object)
+:r file		Import a file into the current file
+:34 r file	Import a file into the current file after line 34
+:w		Write out the file to save changes
+:w file		Write the file to named file
+:wq		Save the file exit vi
+:w!		Force save the file
+ZZ		Save the file exit vi
+:q!		Quit vi but don't save changes
+x		Delete the character at the cursor
+X		Delete the character behind the cursor
+dd		Delete the line the cursor is on
+10dd		Delete the 10 lines following the cursor
+yy		Yank the current line
+p 		Put the yanked line below the current line
+P		Put the yanked line above the current line
+
+*** MView logs
+set trimout on
+column "MVIEW BEING REFRESHED" format a22
+column SID format 999999
+column ROWS_PROCESSES format 999,999,999
+select to_char(sysdate,'hh24:mi:ss') as NOW,
+SID_KNST as SID,
+CURRMVOWNER_KNSTMVR || '.' || CURRMVNAME_KNSTMVR "MVIEW BEING REFRESHED",
+decode( REFTYPE_KNSTMVR, 1, 'FAST', 2, 'NETPLETE', 'UNKNOWN' ) REFTYPE,
+decode(GROUPSTATE_KNSTMVR, 1, 'SETUP', 2, 'INSTANTIATE', 3, 'WRAPUP', 'UNKNOWN' ) STATE,
+( TOTAL_INSERTS_KNSTMVR /* INSERTS */ +
+TOTAL_UPDATES_KNSTMVR /* UPDATES */ +
+TOTAL_DELETES_KNSTMVR /* DELETES */ ) as ROWS_PROCESSED
+from X$KNSTMVR X
+WHERE type_knst=6
+and exists (select 1 from v$session s
+where s.sid=x.sid_knst
+and s.serial#=x.serial_knst);
+
+*** DataDictionary corruption check
+
+--Checks for data dictionary corruption
+Set verify off	
+Set space 0	
+Set line 120	
+Set heading off	
+Set feedback off 	
+Set pages 1000 	
+Spool analyze.sql 	
+	
+Select 'Analyze cluster "'||cluster_name||'" validate structure cascade;' 	
+from dba_clusters 	
+where owner='SYS'	
+union	
+Select 'Analyze table "'||table_name||'" validate structure cascade;' 	
+from dba_tables	
+where owner='SYS' and partitioned='NO' and (iot_type='IOT' or iot_type is NULL)	
+union	
+Select 'Analyze table "'||table_name||'" validate structure cascade into invalid_rows;' 	
+from dba_tables	
+where owner='SYS' and partitioned='YES';	
+	
+spool off	
+
+*** SOX User-Role report
+--User Privilege Report
+SELECT DECODE(SA1.GRANTEE#, 1, 'PUBLIC', U1.NAME) User, SUBSTR(U2.NAME,1,20) “Priv Granted”,
+SUBSTR(SPM.NAME,1,27) “Role Granted”
+FROM SYS.SYSAUTH$ SA1, SYS.SYSAUTH$ SA2, SYS.USER$ U1,
+SYS.USER$ U2, SYS.SYSTEM_PRIVILEGE_MAP SPM
+WHERE SA1.GRANTEE# = U1.USER#
+AND SA1.PRIVILEGE# = U2.USER#
+AND U2.USER# = SA2.GRANTEE#
+AND SA2.PRIVILEGE# = SPM.PRIVILEGE
+UNION
+SELECT U.NAME, NULL, SUBSTR(SPM.NAME,1,27)
+FROM SYS.SYSTEM_PRIVILEGE_MAP SPM, SYS.SYSAUTH$ SA, SYS.USER$ U
+WHERE SA.GRANTEE#=U.USER#
+AND SA.PRIVILEGE#=SPM.PRIVILEGE
+
+
+
+** ASM
+*** Delete directory alias
+
+SELECT 'alter diskgroup bk_group drop file ' --change as needed ||
+ '''+bk_group.' --change as needed ||
+ a.file_number ||
+ '.' ||
+ file_incarnation ||
+ ''';' 
+FROM v$asm_alias a, v$asm_file b
+WHERE a.group_number = b.group_number
+AND a.file_number = b.file_number
+AND b.type = 'BACKUPSET'
+AND a.name like 'backupname%' --change as needed
+AND a.group_number = 3 --change as needed
+ORDER by a.name
+; 
+
+*** ASM check diskgroup
+
+ SELECT g.name "Diskgroup",
+  100*(max((d.total_mb-d.free_mb)/d.total_mb)-min((d.total_mb-d.free_mb)/d.total_mb))/max((d.total_mb-d.free_mb)/d.total_mb) "Imbalance",
+  100*(max(d.total_mb)-min(d.total_mb))/max(d.total_mb) "Variance",
+  100*(min(d.free_mb/d.total_mb)) "MinFree",
+  count(*) "DiskCnt",
+  g.type "Type"
+FROM v$asm_disk d, v$asm_diskgroup g
+WHERE d.group_number = g.group_number and
+  d.group_number <> 0 and
+  d.state = 'NORMAL' and
+  d.mount_status = 'CACHED'
+GROUP BY g.name, g.type;
+/
+
+*** Unix ASM check
+
+sanlun lun show all
+
+multipath -ll
+
+*** Script finfo aor ASM /dev/mapper mapping
+
+for i in `ls /dev/oracleasm/disks`
+do
+fp=$(/etc/init.d/oracleasm querydisk -p $i |grep /dev/mapper| awk -F ":" '{ print $1 }')
+echo "----------$i--------------"
+echo "$fp"
+p=$(echo "$fp"| awk -F "/" '{ print substr($4,1, length($4) - 2) }')
+sudo /sbin/multipath -ll| grep -A 1 $p|awk '{ print $1 }'
+done;
+
+*** Space usage
+
+SET LINESIZE  145
+SET PAGESIZE  9999
+SET VERIFY    off
+COLUMN group_name             FORMAT a20           HEAD 'Disk Group|Name'
+COLUMN sector_size            FORMAT 99,999        HEAD 'Sector|Size'
+COLUMN block_size             FORMAT 99,999        HEAD 'Block|Size'
+COLUMN allocation_unit_size   FORMAT 999,999,999   HEAD 'Allocation|Unit Size'
+COLUMN state                  FORMAT a11           HEAD 'State'
+COLUMN type                   FORMAT a6            HEAD 'Type'
+COLUMN total_mb               FORMAT 999,999,999   HEAD 'Total Size (MB)'
+COLUMN used_mb                FORMAT 999,999,999   HEAD 'Used Size (MB)'
+COLUMN pct_used               FORMAT 999.99        HEAD 'Pct. Used'
+
+
+
+break on report on disk_group_name skip 1
+netpute sum label "Grand Total: " of total_mb used_mb on report
+
+
+SELECT
+    name                                     group_name
+  , sector_size                              sector_size
+  , block_size                               block_size
+  , allocation_unit_size                     allocation_unit_size
+  , state                                    state
+  , type                                     type
+  , total_mb                                 total_mb
+  , (total_mb - free_mb)                     used_mb
+  , ROUND((1- (free_mb / total_mb))*100, 2)  pct_used
+FROM
+    v$asm_diskgroup
+ORDER BY
+    name
+/
+
+
+** Oracle Text Index
+*** View for sync errors
+
+ctx_user_index_errors
+ctx_user_pending 
+
+*** Lists all Text indexes by owner and their current status
+
+select idx_owner,idx_name,idx_table,idx_text_name,idx_docid_count,idx_status
+ from ctxsys.ctx_indexes
+group by idx_owner,idx_name,idx_table,idx_text_name,idx_docid_count,idx_status
+/
+
+*** Oracle Text metalink
+189819.1 CTX_REPORT - information on text index storage
+
+187905.1 Lists all Text indexes by owner and their current status
+119172.1 Synchronising Text Indexes
+811106.1 Text Index Fragmentation
+430207.1 Automatic Synchronisation of text indexes
+823649.1 Oracle Text Health Check
+150453.1 Strategy for creating text indexes
+
+*** Size of all Text Indexes
+
+select sum(KB)/1024/1024 from 
+(select substr(table_name, 4, instr(table_name, '$', -1)-4) index_name,
+sum(bytes)/1024 KB
+from dba_tables t, dba_segments s
+where t.table_name = s.segment_name and t.table_name like 'DR$%$%'
+group by substr(table_name, 4, instr(table_name, '$', -1)-4) 
+union
+select substr(table_name, 4, instr(table_name, '$', -1)-4) index_name,
+sum(bytes)/1024 KB from dba_indexes i, dba_segments s
+where i.index_name = s.segment_name and i.table_name like 'DR$%$%'
+group by substr(table_name, 4, instr(table_name, '$', -1)-4)
+) x, dba_indexes ind
+where x.index_name = ind.index_name
+
+
+
+** Golden Gate
+*** Setup
+create tablespace OGGDATA datafile '/u02/oradata/cdssysp1/oggdata.dbf' size 500M;
+
+create user oggown identified by data default tablespace oggdata temporary tablespace TEMP;
+grant connect, resource, dba to OGGOWN;
+ALTER DATABASE ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS;
+
+./ggsci
+dblogin userid oggown, password data
+
+ADD CHECKPOINTTABLE oggown.chkptab
+*** Table mapping in Replicate
+
+map SIEBEL.S_ASSET, target SIEBEL.S_ASSET;
+map SIEBEL.S_ORG_EXT, target SIEBEL.S_ORG_EXT;
+
+*** Recreate replicat
+
+DBLOGIN USERID OGGOWN, PASSWORD data
+DELETE REPLICAT RTEMPSBL
+ADD REPLICAT RTEMPSBL, EXTTRAIL /u01/oradata/oggdata/CRMPDS01/dirdat/rem/re, CHECKPOINTTABLE OGGOWN.CHKPTAB 
+
+*** Start replicat at particular point
+
+alter replicat RTEMPSBL extseqno 255, extrba 0
+START RTEMPSBL AFTERCSN 8356420875547
+
+*** Script for RAC Failover of GG
+#!/bin/sh
+set -x
+#GG auto restart
+OGG_HOME=/u01/app/ogg/GG11g
+export OGG_HOME;
+start_delay_secs=5
+#Include the GoldenGate home in the library path to start GGSCI
+LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${OGG_HOME}
+#set the oracle home to the database to ensure GoldenGate will get the
+#right environment settings to be able to connect to the database
+ORACLE_HOME=/u01/app/CVG/oracle/product/11.2.0/db1
+JAVA_HOME=/usr/java/default
+PATH=$PATH:/usr/java/default/bin
+#check_process validates that a manager process is running at the PID
+#that GoldenGate specifies.
+
+check_process () {
+if ( [ -f "${OGG_HOME}/dirpcs/MGR.pcm" ] )
+then
+pid=`cut -f8 "${OGG_HOME}/dirpcs/MGR.pcm"`
+if [ ${pid} = `ps -e |grep ${pid} |grep mgr |cut -d " " -f2` ]
+then
+#manager process is running on the PID . exit success
+exit 0
+else
+if [ ${pid} = `ps -e |grep ${pid} |grep mgr |cut -d " " -f1` ]
+then
+#manager process is running on the PID . exit success
+exit 0
+else
+#manager process is not running on the PID
+exit 1
+fi
+fi
+else
+#manager is not running because there is no PID file
+exit 1
+fi
+}
+
+#call_ggsci is a generic routine that executes a ggsci netmand
+call_ggsci () {
+ggsci_netmand=$1
+ggsci_output=`${OGG_HOME}/ggsci << EOF
+${ggsci_netmand}
+exit
+EOF`
+}
+
+case $1 in
+'start')
+#start manager
+call_ggsci 'start manager'
+#there is a small delay between issuing the start manager netmand
+#and the process being spawned on the OS . wait before checking
+sleep ${start_delay_secs}
+#Start the Extract and Replicat processes
+call_ggsci 'start *'
+#check whether manager is running and exit accordingly
+check_process
+;;
+
+'stop')
+#attempt a clean stop for all non-manager processes
+call_ggsci 'stop er *'
+#ensure everything is stopped
+call_ggsci 'stop er *!'
+#stop manager without (y/n) confirmation
+call_ggsci 'stop manager!'
+#exit success
+exit 0
+;;
+
+'check')
+check_process
+;;
+
+'clean')
+#attempt a clean stop for all non-manager processes
+call_ggsci 'stop er *'
+#ensure everything is stopped
+call_ggsci 'stop er *!'
+#in case there are lingering processes
+call_ggsci 'kill er *'
+#stop manager without (y/n) confirmation
+call_ggsci 'stop manager!'
+#exit success
+exit 0
+;;
+
+'abort')
+#ensure everything is stopped
+call_ggsci 'stop er *!'
+#in case there are lingering processes
+call_ggsci 'kill er *'
+#stop manager without (y/n) confirmation
+call_ggsci 'stop manager!'
+#exit success
+exit 0
+;;
+esac
+
+*** Netmand for Extract, Pump, Replicat
+Extract
+================
+
+add extract e1cvgpf1,tranlog,threads 2, begin now
+
+add exttrail /u01/app/ogg/GG11g/dirdat/e1cvgpf1/ex, extract e1cvgpf1,megabytes 10
+
+
+Pump
+==================
+add extract p1cvgpf1,exttrailsource /u01/app/ogg/GG11g/dirdat/e1cvgpf1/ex
+add RMTTRAIL /u01/app/ogg/GG11g/dirdat/r1cvgpf1/rp , extract p1cvgpf1
+
+
+alter extract p1cvgpf1, begin now
+
+
+
+Replicat
+============================
+add replicat r1cvgpf1 , exttrail /u01/app/ogg/GG11g/dirdat/r1cvgpf1/rp, begin now, checkpointtable oggown.chkptab
+
+*** Table stats
+stats extract PBRMPHA1 , total daily, table BRM01.IC_QUEUE_BILL_NOW_T;
+
+*** Replicat altering
+alter EXTRACT BEGIN 2011-12-15 20:53:54
+
+*** Moving Replicat
+alter replicat R2SYSSBL extseqno ***, extrba 0
+start replicat R2SYSSBL, aftercsn <scnno>
+
+*** OGG 12c install netmand
+./runInstaller -silent -responseFile /u01/app/ogg/fbo_ggs_Linux_x64_shiphome/Disk1/response/oggxxxxx.rsp 
+
+*** OGG 12c Response File
+oracle.install.responseFileVersion=/oracle/install/rspfmt_ogginstall_response_schema_v12_1_2
+INSTALL_OPTION=ORA11g
+SOFTWARE_LOCATION=/u01/app/cdssysp1/ogg
+START_MANAGER=TRUE
+MANAGER_PORT=7809
+DATABASE_LOCATION=/u01/app/cdssysp1/oracle/product/11.2.0.3/db
+INVENTORY_LOCATION=/u01/app/cdssysp1/oraInventory
+UNIX_GROUP_NAME=oinstall
+
+
+** OEM
+*** Secure agent to new OMS
+
+emctl secure agent xxxxx01 -emdWalletSrcUrl https://oem-gc.dev.xxxxx.net:1159/em
+emctl secure agent xxxxx01 -emdWalletSrcUrl https://oem-gc.sys.rytptc.xxxxx.net:1159/em
+
+*** Response file
+
+
+SECURITY_UPDATES_VIA_MYORACLESUPPORT=FALSE
+DECLINE_SECURITY_UPDATES=TRUE
+s_OMSHOST="oem-gc.dev.xxxxx.net"
+s_OMSPORT=1159
+s_securePassword="xxxxx01"
+s_securePasswordConfirm="xxxxx01"
+
+./runInstaller -silent -noconfig -force -ignoreSysPrereqs -responseFile = /export/home/oracle/solaris/agent/install/response/agent_solaris.rsp
+
+*** Uninstall Agent
+
+ ./runInstaller -removeallfiles -silent -force
+
+*** Clone agent 
+
+
+
+./runInstaller -clone -forceClone ORACLE_HOME=/u01/app/oracle/product/agent10g  ORACLE_HOME_NAME=Agent10g -noconfig -silent OMS_HOST=oem-gc.dev.xxxxx.net OMS_PORT=1159
+
+Ignore "Configuration assistants have not been run" message
+Run agent like
+
+Postinstall steps 
+su - root
+/app/oracle/product/agent10g/root.sh
+
+Configure Agent 
+su - oracle
+/app/oracle/product/agent10g/bin/agentca -f
+Secure Agent. Enter registration password when prompted 
+/app/oracle/product/agent10g/bin/emctl secure agent
+
+./emctl status agent
+
+*** Check for open ports
+
+
+From dB server to OMS server
+============================
+oracle@pdeveibdb400.my.xxxxx.net:/u01/app/e7942/oracle->telnet qymdevomsap01.ryt.xxxxx.net 4889
+Trying 10.136.126.71...
+Connected to qymdevomsap01.ryt.xxxxx.net (10.136.126.71).
+Escape character is '^]'.
+
+Connection closed by foreign host.
+oracle@pdeveibdb400.my.xxxxx.net:/u01/app/e7942/oracle->telnet qymdevomsap01.ryt.xxxxx.net 1159
+Trying 10.136.126.71...
+Connected to qymdevomsap01.ryt.xxxxx.net (10.136.126.71).
+
+=====================================================================
+From OMS to dB server
+=====================
+[oracle@qymdevomsap01 ~]$ telnet pdeveibdb400.my.xxxxx.net 3872
+Trying 10.164.2.168...
+telnet: connect to address 10.164.2.168: No route to host
+telnet: Unable to connect to remote host: No route to host
+
+
+[oracle@qymdevomsap01 ~]$ telnet pdeveibdb400.my.xxxxx.net 1521
+Trying 10.164.2.168...
+Connected to pdeveibdb400.my.xxxxx.net (10.164.2.168).
+Escape character is '^]'.
+
+*** Querying OMS Targets
+SELECT a.os_summary AS "OS and OS Version",
+'LOCATION' AS "Location",
+a.cpu_count AS "# Active CPUs",
+b.inet_address AS "Server IP Address",
+a.host_name AS "SERVER NAME",
+'TCP_PORT' AS "Database TCP Ports",
+c.target_name AS "Instance Name",
+'Oracle' AS "DB Type",
+c.netponent_version AS "DB Version" 
+FROM mgmt$os_hw_summary a,
+mgmt$hw_nic b,
+mgmt$target_netponents c
+WHERE a.host_name=c.host_name AND
+b.host_name=c.host_name AND
+b.inet_address IS NOT NULL AND 
+b.inet_address <> '127.0.0.1' AND
+c.target_type = 'oracle_database'
+ORDER BY 5,7 
+/
+
+*** Querying DBSize from OMS
+select sum(a.file_size)/1024/1024/1024, b.database_name, b.ECM_SNAPSHOT_ID from SYSMAN.MGMT_DB_DATAFILES_ECM a , SYSMAN.MGMT_DB_DBNINSTANCEINFO_ECM b   where 
+a. ECM_SNAPSHOT_ID =b.ECM_SNAPSHOT_ID
+group by B.DATABASE_NAME, b.ECM_SNAPSHOT_ID
+
+
+*** Query OMS Target properties
+select * from MGMT$TARGET_PROPERTIES where PROPERTY_NAME = 'Port' and target_Type 
+in ('oracle_listener','oracle_listner', 'oracle_database')
+
+
+** DataGuard 
+*** Sequence listing
+
+alter session set nls_date_format='DD-MON-YYYY HH24:MI:SS';
+
+set lines 150
+
+-- thread 1
+select sequence#, dest_id, thread#, first_time, next_time, registrar, archived, applied, deleted, status from v$archived_log where thread#=1 order by 1,2,3;
+
+       
+
+-- thread 2
+select sequence#, dest_id, thread#, first_time, next_time, registrar, archived, applied, deleted, status from v$archived_log where thread#=2 order by 1,2,3;
+
+*** Parameter check
+
+set linesize 500 pages 0
+
+col value for a90
+
+col name for a50
+
+
+select name, value
+from v$parameter
+where name in ('db_name','db_unique_name','log_archive_config', 'log_archive_dest_1','log_archive_dest_2',
+               'log_archive_dest_state_1','log_archive_dest_state_2', 'remote_login_passwordfile',
+               'log_archive_format','log_archive_max_processes','fal_server','db_file_name_convert',
+                     'log_file_name_convert', 'standby_file_management') ;
+
+*** Real time apply check query
+
+select CASE WHEN
+((extract(second from to_dsinterval(value)) + extract(minute from to_dsinterval(value)) * 60 
++ extract(hour from to_dsinterval(value)) *60*60 + extract(day from to_dsinterval(value)) *60*60*24)
+> 900) THEN 'Critical Data Guard lag more than 15mins'
+WHEN value is null THEN ' Critical Data Broken status'
+WHEN (((sysdate - to_date(DATUM_TIME,'MM/DD/YYYY HH24:MI:SS'))*24*60) > 15) THEN 'Critical Data Guard Network broken'
+ELSE 'Data Guard OK'
+END
+from v$dataguard_stats where name='apply lag';
+
+*** Archive log apply check
+
+SELECT ARCH.THREAD# "Thread", ARCH.SEQUENCE# "Last Sequence Received", APPL.SEQUENCE# "Last Sequence Applied", (ARCH.SEQUENCE# - APPL.SEQUENCE#) "Difference"
+FROM
+(SELECT THREAD# ,SEQUENCE# FROM V$ARCHIVED_LOG WHERE (THREAD#,FIRST_TIME ) IN (SELECT THREAD#,MAX(FIRST_TIME) FROM V$ARCHIVED_LOG GROUP BY THREAD#)) ARCH,
+(SELECT THREAD# ,SEQUENCE# FROM V$LOG_HISTORY WHERE (THREAD#,FIRST_TIME ) IN (SELECT THREAD#,MAX(FIRST_TIME) FROM V$LOG_HISTORY GROUP BY THREAD#)) APPL
+ WHERE
+ARCH.THREAD# = APPL.THREAD#
+ORDER BY 1;
+
+*** Archive log dest status
+SELECT DEST_ID "ID",  STATUS "DB_status",   DESTINATION "Archive_dest",    ERROR "Error"   FROM GV$ARCHIVE_DEST WHERE DEST_ID =2;
+
+*** Switch both archive logs
+alter system archive log current;
+
+
+
+*** Managed Standby status
+select process, status, sequence#, thread# from V$managed_standby;
+
+
+** Logminer
+*** Logminer steps
+
+select * from SYS.DBA_TAB_MODIFICATIONS where table_name in ('S_BU','S_ORG_EXT')
+select * from SYS.DBA_TAB_MODIFICATIONS where table_owner='SIEBEL' order by timestamp desc
+DESC SYS.DBA_TAB_MODIFICATIONS
+EXECUTE SYS.DBMS_LOGMNR_D.BUILD
+
+select * from dict where lower(table_name) like '%mnr%'
+
+create directory LOGMNRDIR as '/apps/oracle/admin/scrm7/audit'
+
+grant read, write on directory LOGMNRDIR to public
+
+EXECUTE SYS.DBMS_LOGMNR_D.BUILD( DICTIONARY_FILENAME =>'dictionary.ora', DICTIONARY_LOCATION => '/apps/oracle/admin/scrm7/audit');
+
+EXECUTE SYS.DBMS_LOGMNR.ADD_LOGFILE(LOGFILENAME => '/apps/oracle/admin/scrm7/arch/1_28850_638798648.arc', OPTIONS => SYS.dbms_logmnr.ADDFILE)
+EXECUTE SYS.DBMS_LOGMNR.ADD_LOGFILE(LOGFILENAME => '/apps/oracle/admin/scrm7/arch/1_28899_638798648.arc', OPTIONS => SYS.dbms_logmnr.ADDFILE)
+
+EXECUTE SYS.DBMS_LOGMNR.ADD_LOGFILE(LOGFILENAME => '/apps/oracle/admin/scrm7/arch/1_28900_638798648.arc', OPTIONS => SYS.dbms_logmnr.ADDFILE);
+
+EXECUTE SYS.DBMS_LOGMNR.START_LOGMNR(DICTFILENAME => '/apps/oracle/admin/scrm7/audit/dictionary.ora',  STARTTIME => to_date('06-OCT-2010 14:00:00', 'DD-MON-YYYY HH24:MI:SS'), ENDTIME => to_date('07-OCT-2010 18:00:00', 'DD-MON-YYYY HH24:MI:SS')); 
+
+SELECT * FROM v$logmnr_contents where table_name in ('S_BU','S_ORG_EXT')
+
+ where SEG_TYPE_NAME='TABLE' and TABLE_SPACE not in ('SYSTEM','SYSAUX')
+
+ where timestamp=to_date('06/10/2010 22:00:04','DD/MM/YYYY HH24:MI:SS') 
+
+
+select max(timestamp) from  v$logmnr_contents
+
+is not null order by netmit_timestamp desc  where TABLE_NAME='S_CT_EVENT'
+where SEG_TYPE_NAME='TABLE' and TABLE_SPACE not in ('SYSTEM','SYSAUX')
+
+select * from V$LOGMNR_LOGS
+
+
+select * from sys.dba_scheduler_job_run_details order by actual_start_date desc
+select * from sys.dba_scheduler_jobs
+select table_name from dict where lower(table_name) like '%schedule%'
+
+
+select object_name, last_ddl_time from sys.dba_objects where object_name in ('S_BU','S_ORG_EXT') and object_type='TABLE'
+select * from v$archived_log where sequence# in (28850,28910) and name is null
+
+
+** Oracle clusterware
+*** Node connectivity
+
+cluvfy netp nodecon -n all -verify
+
+*** OCR Check
+
+./ocrcheck
+
+*** Votedisk
+
+./crsctl query css votedisk
+
+
+
+
+
+** ADRCI and Diag
+*** Creating IPS package for Oracle support
+
+adrci> ips create package problem 2
+
+
+adrci> ips generate package 1 in /tmp
+
+*** Purge old files
+
+adrci > purge -age 8640
+
+*** Writing to alert and trace
+
+   1: Write to the standard trace file
+   2: Write to the alert log
+   3: Write to both files at once
+   exec dbms_system.ksdwrt(3, '-- Start Message --');
+   exec dbms_system.ksdwrt(3, 'Test Message');
+   exec dbms_system.ksdwrt(3, '-- End Message -
+
+
+** Performance
+*** SGA memtotal
+SELECT
+name, ROUND(SUM(bytes/1024/1024)) MB FROM V$SGASTAT
+GROUP
+BY ROLLUP(name)
+order
+by MB desc;
+
+*** SGA per user
+
+SET PAGESIZE 9999
+COLUMN sid FORMAT 999 HEADING 'SID'
+COLUMN oracle_username FORMAT a12 HEADING 'Oracle User' JUSTIFY right
+COLUMN os_username FORMAT a9 HEADING 'O/S User' JUSTIFY right
+COLUMN session_program FORMAT a18 HEADING 'Session Program' TRUNC
+COLUMN session_machine FORMAT a8 HEADING 'Machine' JUSTIFY right TRUNC
+COLUMN session_pga_memory FORMAT 9,999,999,999 HEADING 'PGA Memory'
+COLUMN session_pga_memory_max FORMAT 9,999,999,999 HEADING 'PGA Memory Max'
+COLUMN session_uga_memory FORMAT 9,999,999,999 HEADING 'UGA Memory'
+COLUMN session_uga_memory_max FORMAT 9,999,999,999 HEADING 'UGA Memory MAX'
+SELECT
+s.sid sid
+, lpad(s.username,12) oracle_username
+, lpad(s.osuser,9) os_username
+, s.program session_program
+, lpad(s.machine,8) session_machine
+, (select round(sum(ss.value/1024/1024)) from v$sesstat ss, v$statname sn
+where ss.sid = s.sid and
+sn.statistic# = ss.statistic# and
+sn.name = 'session pga memory') session_pga_memory
+, (select round(sum(ss.value/1024/1024)) from v$sesstat ss, v$statname sn
+where ss.sid = s.sid and
+sn.statistic# = ss.statistic# and
+sn.name = 'session pga memory max') session_pga_memory_max
+, (select round(sum(ss.value/1024/1024)) from v$sesstat ss, v$statname sn
+where ss.sid = s.sid and
+sn.statistic# = ss.statistic# and
+sn.name = 'session uga memory') session_uga_memory
+, (select round(sum(ss.value/1024/1024)) from v$sesstat ss, v$statname sn
+where ss.sid = s.sid and
+sn.statistic# = ss.statistic# and
+sn.name = 'session uga memory max') session_uga_memory_max
+FROM
+v$session s
+ORDER BY session_pga_memory DESC
+/
+
+*** Obj cache by userid
+select OWNER,
+NAME,
+DB_LINK,
+NAMESPACE,
+TYPE,
+SHARABLE_MEM,
+LOADS,
+EXECUTIONS,
+LOCKS,
+PINS
+from v$db_object_cache
+where owner ='DW_PROD'
+and executions <1
+order by OWNER, NAME
+/
+
+*** Long running query
+select opname "Description", round(totalwork/60/60) "Minutes Spent", round(time_remaining/60/60) "Minutes Left", sid
+from v$session_longops
+where time_remaining>0
+order by time_remaining desc
+
+*** Library statistics
+select
+namespace,
+gets locks,
+gets - gethits loads,
+pins,
+reloads,
+invalidations
+from
+sys.v_$librarycache
+where
+gets > 0
+order by
+2 desc
+/
+
+*** find SQL_ID in ASH
+select
+du.username, dsh.* from DBA_HIST_ACTIVE_SESS_HISTORY dsh, dba_users du
+where
+dsh.sql_id='<SQL_ID>'
+and
+dsh.user_id=du.user_id
+
+*** dictionary cache 
+
+Select Upper(Parameter) Parameter,
+Gets,
+Getmisses,
+(Decode(Gets,0,1,Gets)-Getmisses)
+*100/Decode(Gets,0,1,Gets) "HIT %",
+Count,
+Usage
+From V$RowCache;
+
+*** Active Sessions and CPU in last 60 mins
+
+--column sample_minute format a16
+select
+   to_char(round(sub1.sample_time, 'MI'), 'YYYY-MM-DD HH24:MI') as sample_minute,
+   round(avg(sub1.on_cpu),1) as cpu_avg,
+   round(avg(sub1.waiting),1) as wait_avg,
+   round(avg(sub1.active_sessions),1) as act_avg,
+   round( (variance(sub1.active_sessions)/avg(sub1.active_sessions)),1) as act_var_mean
+from
+   (
+     select
+        sample_id,
+        sample_time,
+        sum(decode(session_state, 'ON CPU', 1, 0))  as on_cpu,
+        sum(decode(session_state, 'WAITING', 1, 0)) as waiting,
+        count(*) as active_sessions
+     from
+        v$active_session_history
+     where
+        sample_time > sysdate - (240/1440)
+     group by
+        sample_id,
+        sample_time
+   ) sub1
+group by
+   round(sub1.sample_time, 'MI')
+order by
+   round(sub1.sample_time, 'MI')
+;
+
+*** Total waits in seconds
+column event    format a55
+column avg_wait format 99,990.0000
+
+break on report
+netpute sum of count on report
+
+set feed off
+
+select event, count(*) count, AVG(seconds_in_wait) avg_wait
+from v$session_wait
+where event not in ('SQL*Net message to client',
+                    'SQL*Net message from client',
+                    'smon timer',
+                    'pmon timer',
+                    'rdbms ipc message',
+                    'Streams AQ: qmn slave idle wait',
+                    'Streams AQ: qmn coordinator idle wait',
+                    'SQL*Net more data to client',
+                    'Streams AQ: waiting for time management or cleanup tasks')
+group by event
+/
+
+prompt *note - avg_wait time is in seconds
+prompt
+
+set feed on
+
+*** Retrieve full sql query
+set long 4000
+col sql_fulltext for a400
+
+--select inst_id,sql_text from gv$sqltext where sql_id='&1' order by inst_id,piece;
+select inst_id,sql_fulltext from gv$sqlstats where sql_id='&1' order by inst_id;
+
+*** Top Sessions
+
+set lines 180
+col inst_sid_ser for a13
+col username for a23
+col serv_mod_action for a48
+col tr for a2
+col event for a32
+col sql_id for a13
+col sql_dT for 999999
+col call_dT for 9999999
+col W_dT for 9999
+col obj# for 99999999
+
+
+select 	inst_id||'_'||sid||' '||serial# inst_sid_ser,
+	username||case when regexp_substr(program,' \(...') <> ' (TNS' then regexp_substr(program,' \(.+') end username,
+	sql_id sql_id, 
+	round((sysdate-sql_exec_start)*24*3600,1) sql_dT,
+        last_call_et call_dT,
+	case state when 'WAITING' then round(wait_time_micro/1000000,2) else round(time_since_last_wait_micro/1000000,2) end W_dT,
+        decode(state,'WAITING',event,'CPU') event, 
+	service_name||' '||substr(module,1,20)||' '||ACTION serv_mod_action,  
+          nullif(row_wait_obj#,-1) obj#,decode(taddr,null,null,'NN') tr
+from gv$session
+where ((state='WAITING' and wait_class<>'Idle') or (state<>'WAITING' and status='ACTIVE'))
+      and (machine,port) <> (select machine,port from v$session where sid=sys_context('USERENV','SID')) 
+order by inst_id,sql_id;
+
+*** Explain plan by SQL_ID
+select * from table(dbms_xplan.display_cursor('&1',null,'ADVANCED OUTLINE ALLSTATS LAST +PEEKED_BINDS'));
+
+*** Explain plan from AWR 
+select * from table(dbms_xplan.display_awr('&1',null,null,'ADVANCED OUTLINE ALLSTATS LAST +PEEKED_BINDS'));
+
+*** IO by function
+select min(begin_time) b_time, min(end_time) e_time, function_name,
+       round(sum(small_read_iops+large_read_iops)) read_TOT_iops, round(sum(small_write_iops+large_write_iops)) write_TOT_iops, round(sum(large_read_mbps+small_read_mbps)) read_TOT_mbps, round(sum(large_write_mbps+small_write_mbps)) write_TOT_mbps
+       from GV$IOFUNCMETRIC
+       group by rollup(function_name)
+       having round(sum(small_read_iops+large_read_iops)) + round(sum(large_read_mbps+small_read_mbps)) + round(sum(small_write_iops+large_write_iops)) + round(sum(large_write_mbps+small_write_mbps))  >0
+       order by function_name;
+
+*** Files with significant IO
+
+col name for a60
+col sec for 999
+col file# for 99999
+
+select sum(physical_block_writes) Phys_BLK_W, sum(physical_block_reads) Phys_BLK_R, file_id file#,
+       (select tablespace_name from dba_data_files ddf where ddf.file_id=fh.file_id) TBS_Name, to_char(max(begin_time),'hh24:mi') time, round(max(intsize_csec)/100,0) sec
+from gv$filemetric_history fh
+where begin_time >sysdate-1/24/3
+group by inst_id,file_id
+having sum(physical_block_writes) + sum(physical_block_writes) > 100
+order by 1 desc;
+
+*** How SQL has changed overtime
+prompt enter start and end times in format DD-MON-YYYY [HH24:MI]
+ 
+column sample_end format a21
+select to_char(min(s.end_interval_time),'DD-MON-YYYY DY HH24:MI') sample_end
+, q.sql_id
+, q.plan_hash_value
+, sum(q.EXECUTIONS_DELTA) executions
+, round(sum(DISK_READS_delta)/greatest(sum(executions_delta),1),1) pio_per_exec
+, round(sum(BUFFER_GETS_delta)/greatest(sum(executions_delta),1),1) lio_per_exec
+, round((sum(ELAPSED_TIME_delta)/greatest(sum(executions_delta),1)/1000),1) msec_exec
+from dba_hist_sqlstat q, dba_hist_snapshot s
+where q.SQL_ID=trim('&sqlid.')
+and s.snap_id = q.snap_id
+and s.dbid = q.dbid
+and s.instance_number = q.instance_number
+and s.end_interval_time >= to_date(trim('&start_time.'),'dd-mon-yyyy hh24:mi')
+and s.begin_interval_time <= to_date(trim('&end_time.'),'dd-mon-yyyy hh24:mi')
+and substr(to_char(s.end_interval_time,'DD-MON-YYYY DY HH24:MI'),13,2) like '%&hr24_filter.%'
+group by s.snap_id
+, q.sql_id
+, q.plan_hash_value
+order by s.snap_id, q.sql_id, q.plan_hash_value
+/
+
+*** Current waits in DB
+show parameter db_name
+show parameter instance_name 
+
+col event format a50
+
+select inst_id, event, count(*), avg(Wait_time), max(wait_time)
+  from gv$session_wait 
+  where event not in (
+'HS message to agent',
+'SQL*Net break/reset to client',
+'SQL*Net message from client',
+'SQL*Net message to client',
+'jobq slave wait',
+'pipe get',
+'pmon timer',
+'queue messages',
+'rdbms ipc message',
+'smon timer',
+'wait for unread message on broadcast channel',
+'wakeup time manager',
+'ASM background timer',                                        
+'DIAG idle wait',                                             
+'PX Deq: Execute Reply',                                       
+'PX Deq: Execution Msg',                                       
+'PX Deq: reap credit',                                         
+'Streams AQ: qmn coordinator idle wait',                       
+'Streams AQ: qmn slave idle wait',                            
+'Streams AQ: waiting for messages in the queue',               
+'Streams AQ: waiting for time management or cleanup tasks',
+'class slave wait'                                            
+)
+group by inst_id, event 
+order by 2,1
+;
+
+
+** RAC
+*** Check for lost blocks
+SELECT A.INST_ID "INSTANCE", A.VALUE "GC BLOCKS LOST",
+B.VALUE "GC CUR BLOCKS SERVED",
+C.VALUE "GC CR BLOCKS SERVED",
+A.VALUE/(B.VALUE+C.VALUE) RATIO
+FROM GV$SYSSTAT A, GV$SYSSTAT B, GV$SYSSTAT C
+WHERE A.NAME='gc blocks lost' AND
+B.NAME='gc current blocks served' AND
+C.NAME='gc cr blocks served' and
+B.INST_ID=a.inst_id AND
+C.INST_ID = a.inst_id;
+
+*** GlobalCache Corruption
+SELECT
+A.VALUE "GC BLOCKS LOST 1",
+B.VALUE "GC BLOCKS CORRUPT 1",
+C.VALUE "GC BLOCKS LOST 2",
+D.VALUE "GC BLOCKS CORRUPT 2"
+FROM GV$SYSSTAT A, GV$SYSSTAT B, GV$SYSSTAT C, GV$SYSSTAT D
+WHERE A.INST_ID=1 AND A.NAME='gc blocks lost'
+AND B.INST_ID=1 AND B.NAME='gc blocks corrupt'
+AND C.INST_ID=2 AND C.NAME='gc blocks lost'
+AND D.INST_ID=2 AND D.NAME='gc blocks corrupt';
+
+
+
+
+
+** Metalink Articles of Interest
+
+*** Diagnostic Tools Catalog [ID 559339.1]
+
+
+** Netmon Crontab DBA Jobs
+*** DG real time job
+**** /l/adg_lag_check.sh
+**** more /l/adg_lag_check.sh
+
+#!/bin/bash
+####################################################################################################
+## File Name    : /adg_lag_check.sh                                                                #
+## Description  : Job to check gap in real time apply for DG                                       #
+## Author       : Harris Baskaran                                                                  #
+## Call Syntax  : No parameters, writes local log file                                             #
+## Last Modified: 28/Mar/2013 By Harris Baskaran                                                   #
+####################################################################################################
+export ORACLE_HOME=/u01/app/axfdevp1/oracle/product/11.2.0.3/db
+export ORACLE_SID=axfdevp11
+export PATH=$ORACLE_HOME/bin:$PATH
+DATE=`date '+%m%d%Y%H%M%S'`
+DBA_GROUP='EBSOracleData@xxxxx.net'
+#DBA_GROUP='harris_baskaran@xxxxx.net'
+sqlplus -s / as sysdba << EOF > adg_lag.log
+set head off
+set numf 99999999999
+set feedback off
+set echo off
+set serveroutput on
+select CASE WHEN 
+((extract(second from to_dsinterval(value)) + extract(minute from to_dsinterval(value)) * 60 + extract(hour from to_dsinterval(value)) *60*60 + extract(day from to_dsinterval
+(value)) *60*60*24)
+  > 900) THEN 'Critical Data Guard lag more than 15mins'
+  WHEN value is null THEN ' Critical Data Broken status'
+  WHEN (((sysdate - to_date(DATUM_TIME,'MM/DD/YYYY HH24:MI:SS'))*24*60) > 15) THEN 'Critical Data Guard Network broken'
+  ELSE 'Data Guard OK'
+  END
+ from v\$dataguard_stats where name='apply lag';
+
+EOF
+
+if  grep -c 'Critical' adg_lag.log; then
+        cat adg_lag.log | mailx -s "DataGuard Problem" $DBA_GROUP
+fi;
+
+**** Schedule
+#ADG checking script- Harris Baskaran
+*/5 * * * * /home/oracle/scripts/adg_lag_check.sh 2>&1
+
+*** Primary running ADG log job
+**** /l/adg_lag_2_thr.sh
+**** more /l/adg_lag_2_thr.sh
+#!/bin/sh
+
+#check_dg.sh (works on primary DB), monitors log apply lag.
+
+#set Oracle environment for Sql*Plus
+ORACLE_HOME=/u01/app/otbprfp1/oracle/product/11.2.0.3/db ; export ORACLE_HOME
+export ORACLE_SID=$1
+export LAG_BY=$2
+PATH=$PATH:$ORACLE_HOME/bin ; export PATH
+
+#set working directory
+cd /l
+
+#hostname of the primary DB server
+HOST_NAME=`hostname -s`
+
+#DBAs e-mail IDs seperated by space
+
+DBA_GROUP='DBA@mydomain.net'
+
+#SQL statements to extract Dataguard info from v$archived_log of primary DB
+PRI_THRD_1_ARCHIVED_SQL='select nvl(max(SEQUENCE#),0) from v$archived_log where dest_id=1 and thread#=1 and first_time > (sysdate-7);'
+PRI_THRD_2_ARCHIVED_SQL='select nvl(max(SEQUENCE#),0) from v$archived_log where dest_id=1 and thread#=2 and first_time > (sysdate-7);'
+ADG_THRD_1_APPLIED_SQL='select nvl(max(SEQUENCE#),0) from v$archived_log where dest_id=2 and thread#=1 and first_time > (sysdate-7) and applied='\''YES'\'';'
+ADG_THRD_2_APPLIED_SQL='select nvl(max(SEQUENCE#),0) from v$archived_log where dest_id=2 and thread#=2 and first_time > (sysdate-7) and applied='\''YES'\'';'
+
+
+#Pass Dataguard information to Unix shell variables
+PRI_THRD_1_ARCHIVED=`echo $PRI_THRD_1_ARCHIVED_SQL | sqlplus -S / as sysdba | tail -2|head -1`
+PRI_THRD_2_ARCHIVED=`echo $PRI_THRD_2_ARCHIVED_SQL | sqlplus -S / as sysdba | tail -2|head -1`
+ADG_THRD_1_APPLIED=`echo $ADG_THRD_1_APPLIED_SQL  | sqlplus -S / as sysdba | tail -2|head -1`
+ADG_THRD_2_APPLIED=`echo $ADG_THRD_2_APPLIED_SQL  | sqlplus -S / as sysdba | tail -2|head -1`
+
+
+#Allow LAG_BY archive logs for latency
+let "ADG_THRD_1_MARK=${ADG_THRD_1_APPLIED}+${LAG_BY}"
+let "ADG_THRD_2_MARK=${ADG_THRD_2_APPLIED}+${LAG_BY}"
+
+
+#Problem statement is constructed in MESSAGE variable
+MESSAGE=""
+
+if [ $PRI_THRD_1_ARCHIVED -gt $ADG_THRD_1_MARK ] ; then
+MESSAGE=${MESSAGE}".Dataguard LAG on $HOST_NAME Thread# 1 - Last primary log archived=$PRI_THRD_1_ARCHIVED --- Last Dataguard log applied=$ADG_THRD_1_APPLIED"
+fi
+#MESSAGE="${MESSAGE}\n"
+if [ $PRI_THRD_2_ARCHIVED -gt $ADG_THRD_2_MARK ] ; then
+MESSAGE=${MESSAGE}".\n.Dataguard LAG on $HOST_NAME Thread# 2 -  Last primary log archived=$PRI_THRD_2_ARCHIVED --- Last Dataguard log applied=$ADG_THRD_2_APPLIED."
+fi
+
+if [ -n "$MESSAGE" ] ; then
+echo -e $MESSAGE | mailx -s "$HOST_NAME --- Dataguard Problem" $DBA_GROUP
+fi
+
+**** Schedule
+*/30 * * * * /l/adg_lag_2_thr.sh phpdevp11 3 > /l/log/adg_lag_2_thr.log 2>&1
+
+
+*** Harden Profiles
+
+CREATE OR REPLACE FUNCTION Password_verify_function
+(username varchar2,
+  password varchar2,
+  old_password varchar2)
+  RETURN boolean IS
+   n boolean;
+   m integer;
+   differ integer;
+   isdigit boolean;
+   ischar  boolean;
+   ispunct boolean;
+   iscap boolean;
+   digitarray varchar2(32);
+   punctarray varchar2(25);
+  capchararray varchar2(26);
+  lowchararray varchar2(26);
+BEGIN
+--   digitarray:= '0123456789';
+   capchararray:= 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+   lowchararray:= 'abcdefghijklmnopqrstuvwxyz';
+   digitarray:='1234567890!"#$%&()``*+,-/:;<=>?_';
+
+   -- Check if the password is same as the username
+   IF NLS_LOWER(password) = NLS_LOWER(username) THEN
+     raise_application_error(-20001, 'Password same as or similar to user');
+   END IF;
+
+   -- Check for the minimum length of the password
+   IF length(password) < 8 THEN
+      raise_application_error(-20002, 'Password length less than 8');
+   END IF;
+   -- Check if the password contains at least one low case letter,
+   -- one capital case letter and one non-alphabetic character
+   -- 1. Check for the non-alphabetic character
+   isdigit:=FALSE;
+   m := length(password);
+   FOR i IN 1..length(digitarray) LOOP
+      FOR j IN 1..m LOOP
+         IF substr(password,j,1) = substr(digitarray,i,1) THEN
+            isdigit:=TRUE;
+             GOTO findchar;
+         END IF;
+      END LOOP;
+   END LOOP;
+   IF isdigit = FALSE THEN
+      raise_application_error(-20003, 'Password should contain at least one \
+        non-alphabetic character, one low case and one upper case character');
+   END IF;
+   -- 2. Check for the low case character
+   <<findchar>>
+   ischar:=FALSE;
+   FOR i IN 1..length(lowchararray) LOOP
+      FOR j IN 1..m LOOP
+         IF substr(password,j,1) = substr(lowchararray,i,1) THEN
+            ischar:=TRUE;
+             GOTO findcap;
+         END IF;
+      END LOOP;
+   END LOOP;
+   IF ischar = FALSE THEN
+      raise_application_error(-20003, 'Password should contain at least one \
+              non-alphabetic, one low case and one upper case character');
+   END IF;
+   -- 3. Check for the capital character
+   <<findcap>>
+   iscap:=FALSE;
+   FOR i IN 1..length(capchararray) LOOP
+      FOR j IN 1..m LOOP
+         IF substr(password,j,1) = substr(capchararray,i,1) THEN
+            iscap:=TRUE;
+             GOTO endsearch;
+         END IF;
+      END LOOP;
+   END LOOP;
+   IF iscap = FALSE THEN
+      raise_application_error(-20003, 'Password should contain at least one \
+              non-alphabetic, one low case and one upper case character');
+   END IF;
+
+   <<endsearch>>
+   -- Check if the password differs from the previous password by at least
+   -- 3 letters
+   IF old_password IS NOT NULL THEN
+     differ := length(old_password) - length(password);
+
+     IF abs(differ) < 3 THEN
+       IF length(password) < length(old_password) THEN
+         m := length(password);
+       ELSE
+         m := length(old_password);
+       END IF;
+
+       differ := abs(differ);
+       FOR i IN 1..m LOOP
+         IF substr(password,i,1) != substr(old_password,i,1) THEN
+           differ := differ + 1;
+         END IF;
+       END LOOP;
+
+       IF differ < 3 THEN
+         raise_application_error(-20004, 'Password should differ by at \
+         least 3 characters');
+       END IF;
+     END IF;
+   END IF;
+   -- Everything is fine; return TRUE ;
+   RETURN(TRUE);
+END;
+/
+
+
+CREATE PROFILE ONETIME_PROFILE 
+ limit
+NETPOSITE_LIMIT UNLIMITED
+SESSIONS_PER_USER UNLIMITED
+CPU_PER_SESSION UNLIMITED
+CPU_PER_CALL UNLIMITED
+LOGICAL_READS_PER_SESSION UNLIMITED
+LOGICAL_READS_PER_CALL UNLIMITED
+--IDLE_TIME UNLIMITED
+IDLE_TIME 15
+CONNECT_TIME UNLIMITED
+PRIVATE_SGA UNLIMITED
+FAILED_LOGIN_ATTEMPTS 3
+PASSWORD_LIFE_TIME 90
+PASSWORD_REUSE_TIME UNLIMITED
+PASSWORD_REUSE_MAX UNLIMITED
+PASSWORD_VERIFY_FUNCTION Password_verify_function
+--PASSWORD_LOCK_TIME 1/1440
+PASSWORD_LOCK_TIME 60/1440
+PASSWORD_GRACE_TIME 7;
+
+
+** OEM 12c Push
+*** Target and their properties
+select distinct property_name,entity_type from sysman.mgmt_target_properties, sysman.gc_manageable_entities
+where gc_manageable_entities.entity_guid=mgmt_target_properties.target_guid
+--and gc_manageable_entities.entity_type='&target_type'
+and gc_manageable_entities.manage_status=1
+and gc_manageable_entities.promote_status=1 order by 2
+
+*** DB
+select 'add_target -name="' || ManagementEntityEO.ENTITY_NAME || '" -type="oracle_database" -host="' ||
+ManagementEntityEO.HOST_NAME || '" -credentials="UserName:dbsnmp;password:dbsnmp;Role:Normal" -properties="SID:' ||
+(SELECT PROPERTY_VALUE FROM MGMT_TARGET_PROPERTIES WHERE TARGET_GUID = ManagementEntityEO.ENTITY_GUID AND
+(UPPER(PROPERTY_NAME) LIKE '%SID')) || ';Port:' || (SELECT PROPERTY_VALUE FROM MGMT_TARGET_PROPERTIES WHERE TARGET_GUID = 
+ManagementEntityEO.ENTITY_GUID AND
+(UPPER(PROPERTY_NAME) LIKE '%PORT')) || ';OracleHome:' || (SELECT PROPERTY_VALUE FROM MGMT_TARGET_PROPERTIES WHERE TARGET_GUID =
+ManagementEntityEO.ENTITY_GUID AND
+(UPPER(PROPERTY_NAME) LIKE '%HOME' AND UPPER(PROPERTY_NAME)!='MW_HOME' OR PROPERTY_NAME ='INSTALL_LOCATION') AND ROWNUM = 1) ||
+';MachineName:' || ManagementEntityEO.HOST_NAME || ';"'
+FROM GC_MANAGEABLE_ENTITIES ManagementEntityEO,MGMT_TARGET_TYPES ManagementEntityTypeEO
+WHERE ManagementEntityEO.PROMOTE_STATUS=1
+AND ManagementEntityEO.MANAGE_STATUS=1
+AND ManagementEntityEO.ENTITY_TYPE!= 'host'
+AND ManagementEntityEO.ENTITY_TYPE='oracle_database'
+AND ManagementEntityEO.ENTITY_TYPE= ManagementEntityTypeEO.TARGET_TYPE
+AND (NOT EXISTS(SELECT  1 FROM
+mgmt_type_properties mtp WHERE mtp.target_type= ManagementEntityEO.entity_type AND mtp.property_name ='DISCOVERY_FWK_OPTOUT'AND
+mtp.property_value='1'))
+
+*** Listener
+select 'add_target -name="' || ManagementEntityEO.ENTITY_NAME || '" -type="oracle_listener" -host="' || ManagementEntityEO.HOST_NAME ||'" -properties="LsnrName:' ||
+(SELECT PROPERTY_VALUE FROM MGMT_TARGET_PROPERTIES WHERE TARGET_GUID = ManagementEntityEO.ENTITY_GUID AND
+(UPPER(PROPERTY_NAME) LIKE '%LSNRNAME')) || ';ListenerOraDir:' || (SELECT PROPERTY_VALUE FROM MGMT_TARGET_PROPERTIES WHERE TARGET_GUID = 
+ManagementEntityEO.ENTITY_GUID AND (UPPER(PROPERTY_NAME) LIKE '%LISTENERORADIR')) ||
+';Port:' || (SELECT PROPERTY_VALUE FROM MGMT_TARGET_PROPERTIES WHERE TARGET_GUID = 
+ManagementEntityEO.ENTITY_GUID AND (UPPER(PROPERTY_NAME) LIKE '%PORT'))
+ || ';OracleHome:' || (SELECT PROPERTY_VALUE FROM MGMT_TARGET_PROPERTIES WHERE TARGET_GUID =ManagementEntityEO.ENTITY_GUID AND
+(UPPER(PROPERTY_NAME) LIKE '%HOME' AND UPPER(PROPERTY_NAME)!='MW_HOME' OR PROPERTY_NAME ='INSTALL_LOCATION') AND ROWNUM = 1) ||
+';Machine:' || ManagementEntityEO.HOST_NAME || ';"'
+FROM GC_MANAGEABLE_ENTITIES ManagementEntityEO,MGMT_TARGET_TYPES ManagementEntityTypeEO
+WHERE ManagementEntityEO.PROMOTE_STATUS=1
+AND ManagementEntityEO.MANAGE_STATUS=1
+AND ManagementEntityEO.ENTITY_TYPE!= 'host'
+AND ManagementEntityEO.ENTITY_TYPE='oracle_listener'
+AND ManagementEntityEO.ENTITY_TYPE= ManagementEntityTypeEO.TARGET_TYPE
+AND (NOT EXISTS(SELECT  1 FROM
+mgmt_type_properties mtp WHERE mtp.target_type= ManagementEntityEO.entity_type AND mtp.property_name ='DISCOVERY_FWK_OPTOUT'AND
+mtp.property_value='1'))
+AND ManagementEntityEO.HOST_NAME ='&hostname';
+
+*** metalink
+How to Create an emcli script to Add Databases via Emcli based on the targets found in auto discovery results in Enterprise Manager 12c Cloud Control (Doc ID 1543773.1)
+How to add/delete a rac database using emcli in 12c Cloud Control. (Doc ID 1562360.1)
+
+*** Cluster
+select 
+'add_target -name="' || ManagementEntityEO.ENTITY_NAME 
+|| '" -type="cluster" -host="' ||ManagementEntityEO.HOST_NAME 
+|| '" -monitor_mode="1" -properties="OracleHome:' ||
+(SELECT PROPERTY_VALUE FROM SYSMAN.MGMT_TARGET_PROPERTIES WHERE TARGET_GUID =
+ManagementEntityEO.ENTITY_GUID AND
+(UPPER(PROPERTY_NAME) LIKE '%HOME' AND UPPER(PROPERTY_NAME)!='MW_HOME' OR PROPERTY_NAME ='INSTALL_LOCATION') AND ROWNUM = 1) 
+|| ';eonsPort:' || 
+(SELECT PROPERTY_VALUE FROM SYSMAN.MGMT_TARGET_PROPERTIES WHERE TARGET_GUID = ManagementEntityEO.ENTITY_GUID AND
+(UPPER(PROPERTY_NAME) LIKE 'EONSPORT%')) 
+|| ';scanName:' || 
+(SELECT PROPERTY_VALUE FROM SYSMAN.MGMT_TARGET_PROPERTIES WHERE TARGET_GUID = ManagementEntityEO.ENTITY_GUID AND
+(UPPER(PROPERTY_NAME) LIKE 'SCANNAME%')) 
+|| ';scanPort:' || 
+(SELECT PROPERTY_VALUE FROM SYSMAN.MGMT_TARGET_PROPERTIES WHERE TARGET_GUID = ManagementEntityEO.ENTITY_GUID AND
+(UPPER(PROPERTY_NAME) LIKE 'SCANPORT%'))
+|| ';" -instances="' ||ManagementEntityEO.HOST_NAME||':host;'||
+(select decode(b.host_name,null,'"',b.host_name||':host"')
+FROM SYSMAN.GC_MANAGEABLE_ENTITIES a , SYSMAN.GC_MANAGEABLE_ENTITIES b WHERE a.PROMOTE_STATUS=1
+AND a.MANAGE_STATUS=1
+AND a.ENTITY_TYPE!= 'host'
+AND a.ENTITY_TYPE='cluster'
+and b.HOST_NAME like REGEXP_REPLACE(a.HOST_NAME, '([a-z]+)[0-9].*', '\1%')
+and b.host_name <> a.host_name
+and b.entity_type='host'
+and a.host_name=ManagementEntityEO.host_name
+)
+FROM SYSMAN.GC_MANAGEABLE_ENTITIES ManagementEntityEO,SYSMAN.MGMT_TARGET_TYPES ManagementEntityTypeEO
+WHERE ManagementEntityEO.PROMOTE_STATUS=1
+AND ManagementEntityEO.MANAGE_STATUS=1
+AND ManagementEntityEO.ENTITY_TYPE!= 'host'
+AND ManagementEntityEO.ENTITY_TYPE='cluster'
+AND ManagementEntityEO.ENTITY_TYPE= ManagementEntityTypeEO.TARGET_TYPE
+AND (NOT EXISTS(SELECT  1 FROM
+SYSMAN.mgmt_type_properties mtp WHERE mtp.target_type= ManagementEntityEO.entity_type AND mtp.property_name ='DISCOVERY_FWK_OPTOUT'AND
+mtp.property_value='1'))
+
+*** ASM
+select 'add_target -name="' || ManagementEntityEO.ENTITY_NAME || '" -type="osm_instance" -host="' ||
+ManagementEntityEO.HOST_NAME || '" -credentials="UserName:sys;password:xxxxx01;Role:sysdba" -properties="OracleHome:' ||
+(SELECT PROPERTY_VALUE FROM MGMT_TARGET_PROPERTIES WHERE TARGET_GUID =
+ManagementEntityEO.ENTITY_GUID AND
+(UPPER(PROPERTY_NAME) LIKE '%HOME' AND UPPER(PROPERTY_NAME)!='MW_HOME' OR PROPERTY_NAME ='INSTALL_LOCATION') AND ROWNUM = 1)
+ || ';MachineName:' || (SELECT PROPERTY_VALUE FROM MGMT_TARGET_PROPERTIES WHERE TARGET_GUID = 
+ManagementEntityEO.ENTITY_GUID AND
+(UPPER(PROPERTY_NAME) LIKE '%MACHINENAME')) || ';SID:' || 
+(SELECT PROPERTY_VALUE FROM MGMT_TARGET_PROPERTIES WHERE TARGET_GUID = 
+ManagementEntityEO.ENTITY_GUID AND
+(UPPER(PROPERTY_NAME) LIKE '%SID%'))||
+';Port:' ||
+(SELECT PROPERTY_VALUE FROM MGMT_TARGET_PROPERTIES WHERE TARGET_GUID = 
+ManagementEntityEO.ENTITY_GUID AND
+(UPPER(PROPERTY_NAME) LIKE '%PORT%')) ||'"'
+FROM GC_MANAGEABLE_ENTITIES ManagementEntityEO,MGMT_TARGET_TYPES ManagementEntityTypeEO
+WHERE ManagementEntityEO.PROMOTE_STATUS=1
+AND ManagementEntityEO.MANAGE_STATUS=1
+AND ManagementEntityEO.ENTITY_TYPE!= 'host'
+AND ManagementEntityEO.ENTITY_TYPE='osm_instance'
+AND ManagementEntityEO.ENTITY_TYPE= ManagementEntityTypeEO.TARGET_TYPE
+AND (NOT EXISTS(SELECT  1 FROM
+mgmt_type_properties mtp WHERE mtp.target_type= ManagementEntityEO.entity_type AND mtp.property_name ='DISCOVERY_FWK_OPTOUT'AND
+mtp.property_value='1'))
+
+*** RAC databases
+select 'add_target -name="' || ManagementEntityEO.ENTITY_NAME || '" -type="rac_database" -host="' ||
+ManagementEntityEO.HOST_NAME || 
+'" -monitor_mode="1"  -properties="ServiceName:'||
+(SELECT PROPERTY_VALUE FROM MGMT_TARGET_PROPERTIES WHERE TARGET_GUID = ManagementEntityEO.ENTITY_GUID AND
+(UPPER(PROPERTY_NAME) LIKE '%SERVICENAME%')) ||';ClusterName:'||
+(SELECT PROPERTY_VALUE FROM MGMT_TARGET_PROPERTIES WHERE TARGET_GUID = ManagementEntityEO.ENTITY_GUID AND
+(UPPER(PROPERTY_NAME) LIKE '%CLUSTERNAME%')) ||'" -instances="'||
+(select listagg(sub.entity_name,':oracle_database;') within group (order by sub.entity_name) FROM GC_MANAGEABLE_ENTITIES sub
+where sub.ENTITY_TYPE='oracle_database' and sub.entity_name like ManagementEntityEO.ENTITY_NAME||'%')||':oracle_databaseÓ'
+FROM GC_MANAGEABLE_ENTITIES ManagementEntityEO,MGMT_TARGET_TYPES ManagementEntityTypeEO
+WHERE ManagementEntityEO.PROMOTE_STATUS=1
+AND ManagementEntityEO.MANAGE_STATUS=1
+AND ManagementEntityEO.ENTITY_TYPE!= 'host'
+AND ManagementEntityEO.ENTITY_TYPE='rac_database'
+AND ManagementEntityEO.ENTITY_TYPE= ManagementEntityTypeEO.TARGET_TYPE
+AND (NOT EXISTS(SELECT  1 FROM
+mgmt_type_properties mtp WHERE mtp.target_type= ManagementEntityEO.entity_type AND mtp.property_name ='DISCOVERY_FWK_OPTOUT'AND
+mtp.property_value='1'))
+
+*** Uninstall
+[odevomrdb401.my.xxxxx.net:omrdev011 /u01/app/omrdev01/oracle/product/agent12c/core/12.1.0.3.0] perl sysman/install/AgentDeinstall.pl -agentHome /u01/a
+pp/omrdev01/oracle/product/agent12c/core/12.1.0.3.0
+
+*** Get other host name
+select ManagementEntityEO.HOST_NAME, b.host_name
+FROM SYSMAN.GC_MANAGEABLE_ENTITIES ManagementEntityEO , SYSMAN.GC_MANAGEABLE_ENTITIES b WHERE ManagementEntityEO.PROMOTE_STATUS=1
+AND ManagementEntityEO.MANAGE_STATUS=1
+AND ManagementEntityEO.ENTITY_TYPE!= 'host'
+AND ManagementEntityEO.ENTITY_TYPE='cluster'
+and b.HOST_NAME like REGEXP_REPLACE(ManagementEntityEO.HOST_NAME, '([a-z]+)[0-9].*', '\1%')
+and b.host_name <> ManagementEntityEO.host_name
+and b.entity_type='host'
+
+
+
+** Git Netmands
+*** Create a new repository on the netmand line
+touch README.md
+git init
+git add README.md
+git netmit -m "first netmit"
+git remote add origin https://github.net/harry2040/OEM12cDeploy.git
+git push -u origin master
+
+*** Push an existing repository from the netmand line
+git remote add origin https://github.net/harry2040/OEM12cDeploy.git
+git push -u origin master
+
